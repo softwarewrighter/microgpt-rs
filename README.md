@@ -1,9 +1,11 @@
 # microgpt-rs
 
-Ports of [Andrej Karpathy's microgpt.py](https://github.com/karpathy/microgpt)
+Ports of [Andrej Karpathy's microgpt.py](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95)
 — "the most atomic way to train and run inference for a GPT" — exploring the
 same complete algorithm at different levels of the hardware/software stack,
-in Rust.
+in Rust. This project was inspired by the write-up
+["Andrej Karpathy Just Built an Entire GPT in 243 Lines of Python"](https://www.towardsdeeplearning.com/andrej-karpathy-just-built-an-entire-gpt-in-243-lines-of-python-7d66cfdfa301)
+(Towards Deep Learning, on Medium).
 
 The original is ~200 lines of dependency-free Python: a character tokenizer,
 a scalar autograd engine, a GPT-2-style transformer (1 layer, 16-dim, 4
