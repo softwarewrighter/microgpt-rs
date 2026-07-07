@@ -128,8 +128,10 @@ one-doc-per-step semantics so loss curves are directly comparable.
 
 # microgpt-cuda — Sketch (Rust + CUDA on Arch Linux, contingent on MLX demo)
 
-Planned third leg; full plan to be written after the MLX demo lands. The
-shape, for early review:
+Status: **landed (2026-07-07)** — implemented as sketched below
+(`cudarc` 0.19 + NVRTC, toolkit 13.2, RTX 5060 Ti). All per-kernel and
+end-to-end gradient checks pass; results in the README. The original
+sketch, for the record:
 
 - **Thesis:** MLX showed "let a framework differentiate tensor ops." The
   CUDA demo goes one level *down* instead: hand-written forward **and

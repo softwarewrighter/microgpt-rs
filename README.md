@@ -18,9 +18,10 @@ efficiency.* This repo is the "everything else," one rung at a time:
 |---|---|---|---|
 | `.` (**microgpt-rs**) | CPU, zero dependencies | hand-rolled scalar tape | done |
 | [`microgpt-mlx/`](microgpt-mlx/) | Apple Silicon GPU ([mlx-rs]) | MLX `value_and_grad` | done |
-| `microgpt-cuda/` | NVIDIA GPU (cudarc, Arch Linux) | hand-written per-layer backward | planned |
+| [`microgpt-cuda/`](microgpt-cuda/) | NVIDIA GPU ([cudarc], CUDA C kernels) | hand-written per-layer backward | done |
 
 [mlx-rs]: https://crates.io/crates/mlx-rs
+[cudarc]: https://crates.io/crates/cudarc
 
 ## Run
 
@@ -28,6 +29,10 @@ efficiency.* This repo is the "everything else," one rung at a time:
 cargo run --release                 # CPU demo (this crate)
 cargo run --release -p microgpt-mlx # Apple Silicon GPU demo (needs Xcode's Metal toolchain)
 cargo test                          # gradient checks vs finite differences + sanity checks
+
+cd microgpt-cuda                    # NVIDIA GPU demo -- standalone, not a workspace member
+cargo run --release                 # (needs the CUDA toolkit on a Linux/NVIDIA box)
+cargo test --release                # per-kernel + end-to-end gradient checks, on the GPU
 ```
 
 `input.txt` (the makemore names dataset) is downloaded via `curl` on first
@@ -45,13 +50,18 @@ sample  3: zarani
 ...
 ```
 
-Output is deterministic (seed 42): run it twice, get identical bits.
+Output is deterministic (seed 42): run it twice, get identical bits. That
+holds for the CUDA version too (its kernels use no atomics) — and in fact
+the CPU and CUDA versions print the identical 20 sample names.
 
 ## Results and comparison
 
-All measured on the same M-series Mac, same dataset, same 1000 training
-steps. "Loss band" is where the per-document training loss settles (it
-starts at ln 27 ≈ 3.30, the uniform-guessing floor).
+Same dataset, same 1000 training steps everywhere. "Loss band" is where the
+per-document training loss settles (it starts at ln 27 ≈ 3.30, the
+uniform-guessing floor). Two machines, so two tables — comparisons are only
+made within a table.
+
+**Apple M1 Max:**
 
 | implementation | total wall time | loss band | sample quality |
 |---|---|---|---|
@@ -59,21 +69,41 @@ starts at ln 27 ≈ 3.30, the uniform-guessing floor).
 | **microgpt-rs** (CPU, scalar tape) | **1.0 s** | ~2.0–2.2 | `amani`, `kayli`, `delana` |
 | **microgpt-mlx** (Metal GPU, tensors) | 2.2 s | ~2.0–2.2 | `anala`, `celin`, `kayan` |
 
-Three observations worth more than the table:
+**Linux box (Intel Xeon W-2135, RTX 5060 Ti, CUDA 13.2):**
 
-1. **All three produce equivalent models.** Same loss band, same name
+| implementation | total wall time | training only | loss @ step 1000 | sample quality |
+|---|---|---|---|---|
+| **microgpt-rs** (Xeon CPU, scalar tape) | **0.75 s** | ~0.7 s | 1.9146 | `amanion`, `alik`, `zarani` |
+| **microgpt-cuda** (RTX 5060 Ti, hand kernels) | 1.0 s | **0.10 s** | 1.9146 | `amanion`, `alik`, `zarani` |
+
+(CUDA total wall time is dominated by one-time startup: CUDA context init
+plus NVRTC-compiling the kernels is ~0.9 s. Training itself runs at ~10,000
+steps/s once the GPU is at clock; from idle clocks the first run ramps
+through ~0.5 s. Both numbers from warm repeat runs.)
+
+Four observations worth more than the tables:
+
+1. **All four produce equivalent models.** Same loss band, same name
    quality. Python's exact numbers differ only because its RNG differs.
-2. **The two Rust versions are near-twins by construction.** They share the
+2. **The Rust versions are near-twins by construction.** They share the
    same host RNG for initialization and the same document order, so their
-   per-step losses track to ~3 decimal places (final step: 1.9146 CPU-f64
-   vs 1.9160 GPU-f32). The only divergence is float precision. This is the
-   cheapest possible cross-implementation correctness proof.
-3. **The GPU loses at this scale — honestly and predictably.** A Metal
-   kernel dispatch costs roughly the same (~0.5 ms) for a 16×16 matmul as
-   for a 1024×1024 one; a 4,192-parameter model is pure dispatch overhead.
-   CPython, meanwhile, pays ~160× interpreter tax on the same scalar math.
-   The GPU's win appears when the model grows (a planned `--scale` mode:
-   ~3M params, batched documents).
+   per-step losses track each other (final step: 1.9146 CPU-f64 vs 1.9160
+   MLX-f32). The only divergence is float precision and reduction order.
+   This is the cheapest possible cross-implementation correctness proof.
+3. **The CUDA port passes that test to the last decimal.** Its f32 kernels
+   accumulate in the same order as the CPU's scalar loops, so against the
+   f64 CPU run, 998 of the 1000 printed step losses match to all 4 decimals
+   (the other two differ by one in the last digit) and all 20 sampled names
+   come out *character-for-character identical* — autograd tape and
+   hand-derived per-layer backward agreeing end to end.
+4. **Whether a GPU loses at this scale depends on the cost of a dispatch.**
+   A Metal kernel dispatch costs ~0.5 ms whether the matmul is 16×16 or
+   1024×1024, so on the Mac a 4,192-parameter model is pure dispatch
+   overhead and the GPU loses to the CPU by 2×. A CUDA kernel launch costs
+   ~2 µs — ~40 launches per step still leaves the RTX training 7× faster
+   than the Xeon, even at a batch size of one document. (CPython, for
+   scale, pays ~160× interpreter tax on the same math.) The GPUs' real win
+   would need a `--scale` mode: ~3M params, batched documents.
 
 ## Design notes
 
@@ -97,11 +127,23 @@ become `(T, C)` matmuls, and the training-time KV cache becomes causal-mask
 attention over the whole sequence. Parameters live in unified memory, read
 by the GPU in place. One dependency: `mlx-rs`.
 
-**CUDA (planned).** The opposite move: down instead of up. Hand-written
-forward *and* backward kernels via `cudarc` — no autograd at all, a
-micro-sized Rust `llm.c` — with explicit host↔device copies as the contrast
-to Apple's unified memory. Kept out of the cargo workspace so macOS builds
-never touch it; it builds standalone on a Linux/NVIDIA box.
+**CUDA (`microgpt-cuda/`).** The opposite move: down instead of up. No
+autograd at all — every layer implements forward *and* backward as a
+hand-written CUDA kernel (~20 kernels: embedding, rmsnorm, matmul, causal
+softmax, attention mix, ReLU, cross-entropy, and a fused Adam step), the
+chain rule derived per-layer on paper instead of per-scalar by machine. A
+micro-sized, Rust-flavored `llm.c`. The kernels are CUDA C strings compiled
+at startup with NVRTC and launched from safe Rust via `cudarc` (pinned to
+0.19 / toolkit 13.2); parameters live in one flat device buffer, and every
+number the host sees — the loss, the sampled logits — crosses the PCIe bus
+in an explicit device↔host copy, the deliberate contrast with Apple's
+unified memory. No atomics anywhere (embedding backward *gathers* per vocab
+row instead of scattering with `atomicAdd`), so training is bit-
+deterministic, same as the CPU crate. Each backward kernel is finite-
+difference-checked against its own forward, plus an end-to-end gradient
+check through the whole model (`cargo test`, needs the GPU). Kept out of
+the cargo workspace so macOS builds never touch it; it builds standalone on
+a Linux/NVIDIA box.
 
 Full architecture/design/milestone docs: [`docs/`](docs/) —
 [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DESIGN.md](docs/DESIGN.md),

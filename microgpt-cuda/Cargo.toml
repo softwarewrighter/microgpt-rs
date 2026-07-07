@@ -1,0 +1,17 @@
+[package]
+name = "microgpt-cuda"
+version = "0.1.0"
+edition = "2024"
+
+# Deliberately NOT a workspace member (see ../Cargo.toml `exclude`):
+# this crate only builds on a Linux/NVIDIA box with the CUDA toolkit installed.
+[workspace]
+
+[dependencies]
+cudarc = { version = "0.19", default-features = false, features = [
+    "driver",
+    "nvrtc",
+    "std",
+    "fallback-dynamic-loading",
+    "cuda-13020", # pin to the installed toolkit (nvcc release 13.2)
+] }
