@@ -1,3 +1,10 @@
+[workspace]
+members = ["microgpt-mlx"]
+# microgpt-cuda (planned) will live here too but stays excluded from the
+# workspace: it only builds on a Linux/NVIDIA box, so `cargo build` on macOS
+# must not touch it. Build it standalone on the Arch machine.
+exclude = ["microgpt-cuda"]
+
 [package]
 name = "microgpt-rs"
 version = "0.1.0"
