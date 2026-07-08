@@ -130,8 +130,14 @@ one-doc-per-step semantics so loss curves are directly comparable.
 
 Status: **landed (2026-07-07)** — implemented as sketched below
 (`cudarc` 0.19 + NVRTC, toolkit 13.2, RTX 5060 Ti). All per-kernel and
-end-to-end gradient checks pass; results in the README. The original
-sketch, for the record:
+end-to-end gradient checks pass; results in the README. **Scale mode
+landed (2026-07-08)**: `--scale` (~800K params, 4 layers, 128-dim, batch
+32 — sized so the CPU control run stays under 3 minutes) on the same code
+path, matmuls upgraded naive → shared-memory tiled, plus a
+`microgpt-scale/` CPU crate as the control group. The M4 milestone
+above (MLX scale mode, on the Mac) is the remaining piece — the scale
+config to match is the one in `microgpt-cuda/src/main.rs::SCALE`. The
+original sketch, for the record:
 
 - **Thesis:** MLX showed "let a framework differentiate tensor ops." The
   CUDA demo goes one level *down* instead: hand-written forward **and
