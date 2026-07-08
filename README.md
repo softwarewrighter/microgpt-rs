@@ -25,8 +25,9 @@ Two model configurations run through those crates: **parity** (Karpathy's
 original: 1 layer, 16-dim, 4,192 params, one document per step) and
 **scale** (4 layers, 128-dim, 8 heads, ~800K params, 32 documents per
 batched step) — parity to prove correctness against the original, scale to
-show what the efficiency machinery is actually *for*. MLX at scale is the
-remaining leg, planned next on the Mac.
+show what the efficiency machinery is actually *for*. Every crate now runs
+both configs (`--scale` on the GPU crates, `--parity` on microgpt-scale;
+the tape crate is parity-only, for a reason explained below).
 
 [mlx-rs]: https://crates.io/crates/mlx-rs
 [cudarc]: https://crates.io/crates/cudarc
@@ -36,6 +37,7 @@ remaining leg, planned next on the Mac.
 ```sh
 cargo run --release                 # CPU demo (this crate)
 cargo run --release -p microgpt-mlx # Apple Silicon GPU demo (needs Xcode's Metal toolchain)
+cargo run --release -p microgpt-mlx -- --scale # same binary at the ~800K-param scale config
 cargo test                          # gradient checks vs finite differences + sanity checks
 
 cargo run --release -p microgpt-scale           # CPU at the ~800K-param scale config
@@ -65,7 +67,13 @@ sample  3: zarani
 
 Output is deterministic (seed 42): run it twice, get identical bits. That
 holds for the CUDA version too (its kernels use no atomics) — and in fact
-the CPU and CUDA versions print the identical 20 sample names.
+the CPU and CUDA versions print the identical 20 sample names. The MLX
+crate is the one exception: Metal's kernel scheduling perturbs some
+reduction orders, so roughly once every few hundred steps a printed loss
+flips by one ulp and the drift compounds from there. Every run lands in
+the same loss band with the same name quality, but not the same bits —
+the hand-written crates *earn* their determinism by fixing every
+summation order, and the framework path trades that to the scheduler.
 
 ## Results and comparison
 
@@ -80,7 +88,11 @@ made within a table.
 |---|---|---|---|
 | `microgpt.py` (CPython 3.9) | 98.3 s | ~2.0–2.2 | `karai`, `keylen`, `anton` |
 | **microgpt-rs** (CPU, scalar tape) | **1.0 s** | ~2.0–2.2 | `amani`, `kayli`, `delana` |
-| **microgpt-mlx** (Metal GPU, tensors) | 2.2 s | ~2.0–2.2 | `anala`, `celin`, `kayan` |
+| **microgpt-mlx** (Metal GPU, tensors) | 2.6 s | ~2.0–2.2 | `amanion`, `alik`, `zarani` |
+
+(The MLX crate samples with the host RNG like its siblings, so its parity
+run opens with the same names microgpt-rs prints — the two implementations
+agree until f32-vs-f64 drift flips a coin toss mid-list.)
 
 **Linux box (Intel Xeon W-2135, RTX 5060 Ti, CUDA 13.2):**
 
@@ -121,7 +133,7 @@ Four observations worth more than the tables:
 
 ## Results at scale
 
-The scale config (`--scale` on the CUDA crate; the default for
+The scale config (`--scale` on the CUDA and MLX crates; the default for
 `microgpt-scale`) is 4 layers, 128-dim, 8 heads, 795,392 parameters, 32
 documents per batched step — ~2.4 GFLOP per training step instead of ~1
 MFLOP, over the same 1000 steps. Same Linux box as above. Init std drops
@@ -134,7 +146,13 @@ seconds on the GPU, under three minutes on the CPU.
 | microgpt-rs (scalar tape) | — | — | — | *cannot run: one tape node per scalar op is billions of nodes (~100 GB) per step* |
 | **microgpt-scale** (Xeon CPU, 12 threads) | 168.5 s | 5.9 | 2.133 | `adari`, `annila`, `yuriana` |
 | **microgpt-cuda --scale** (RTX 5060 Ti) | **13.1 s** | **76.2** | 2.132 | `adari`, `annina`, `yuriana` |
-| microgpt-mlx (M1 Max) | *planned — next up, on the Mac* | | | |
+
+**Apple M1 Max, same scale config:**
+
+| implementation | train time | steps/s | loss @ step 1000 | sample quality |
+|---|---|---|---|---|
+| **microgpt-scale** (M1 Max CPU, 10 threads) | 77.1 s | 13.0 | 2.129 | `adari`, `annila`, `yuriane` |
+| **microgpt-mlx --scale** (M1 Max GPU) | **6.0 s** | **165.9** | 2.128 | `adari`, `annila`, `yuriana` |
 
 We also ran a 4× bigger config once (4 layers, 256-dim, batch 64: 3.16M
 params, ~19 GFLOP/step) before sizing the demo down: GPU 26.0 s vs CPU
@@ -165,7 +183,16 @@ What the scale run shows:
    ~2.0–2.2 band), and the samples sound more like names: `yuriana`,
    `anayah`, `anysha` — and the 3.16M run more still (`weston`, `arielle`,
    `emmalina`, `cambrie`).
-5. **Efficiency work happens on both sides, and it's the same lesson
+5. **The Metal GPU crossed over too, by the opposite route.** At parity
+   MLX loses to the CPU tape (2.6 s vs 1.0 s, dispatch-bound); at scale it
+   beats the same machine's 10-thread CPU control 12.8× (6.0 s train vs
+   77.1 s) — and it contains no backward code at all, because MLX
+   differentiates the forward pass. CUDA earned its crossover by writing
+   kernels *down* the stack; MLX earned the same crossover going *up* to a
+   framework. Loss agrees with the other two to the third decimal
+   (2.128 / 2.129 / 2.132–2.133) and the samples open with the same names
+   (`adari`, `annila`, `yuriana`/`yuriane`).
+6. **Efficiency work happens on both sides, and it's the same lesson
    twice.** The CUDA matmuls went naive → shared-memory tiled (2.2× on the
    3.16M config): stage each 16×16 patch once, coalesced, instead of
    letting every warp scatter reads across 32 cache lines. The CPU
@@ -193,9 +220,14 @@ Zero crates — including the RNG (splitmix64 + Box–Muller, ~40 lines).
 
 **MLX (`microgpt-mlx/`).** The same model re-expressed as tensor ops: the
 hand-rolled tape is replaced by MLX's `value_and_grad`, per-position loops
-become `(T, C)` matmuls, and the training-time KV cache becomes causal-mask
-attention over the whole sequence. Parameters live in unified memory, read
-by the GPU in place. One dependency: `mlx-rs`.
+become `(B, T, C)` matmuls, and the training-time KV cache becomes
+causal-mask attention over the whole sequence. Parameters live in unified
+memory, read by the GPU in place. One code path serves both configs, same
+as the CUDA crate: parity is just `batch=1, layers=1`, sliced to the
+document length so no padding mask fires. Sampling uses the shared host
+RNG, so given equal logits it prints the same names as its siblings. One
+dependency: `mlx-rs`. One honest caveat: Metal kernel scheduling makes it
+the only crate here that is not bit-deterministic run to run (see above).
 
 **CUDA (`microgpt-cuda/`).** The opposite move: down instead of up. No
 autograd at all — every layer implements forward *and* backward as a

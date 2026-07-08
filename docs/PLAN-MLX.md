@@ -134,10 +134,17 @@ end-to-end gradient checks pass; results in the README. **Scale mode
 landed (2026-07-08)**: `--scale` (~800K params, 4 layers, 128-dim, batch
 32 — sized so the CPU control run stays under 3 minutes) on the same code
 path, matmuls upgraded naive → shared-memory tiled, plus a
-`microgpt-scale/` CPU crate as the control group. The M4 milestone
-above (MLX scale mode, on the Mac) is the remaining piece — the scale
-config to match is the one in `microgpt-cuda/src/main.rs::SCALE`. The
-original sketch, for the record:
+`microgpt-scale/` CPU crate as the control group. **M4 (MLX scale mode)
+landed (2026-07-08)**: same `--scale` flag and config on `microgpt-mlx`,
+batched masked training, host-RNG sampling shared with the siblings.
+M1 Max results: 6.0 s train (165.9 steps/s) vs 77.1 s for the CPU control
+on the same machine (12.8×); loss 2.128 vs 2.129 (CPU control) vs 2.132
+(CUDA); samples open with the same names (`adari`, `annila`, `yuriana`).
+Finding worth recording: MLX on Metal is *not* bit-deterministic run to
+run (ulp-level reduction-order noise every few hundred steps, compounding
+thereafter) — unlike the CPU/CUDA crates, which fix every summation
+order. With that, the demo series is complete. The original sketch, for
+the record:
 
 - **Thesis:** MLX showed "let a framework differentiate tensor ops." The
   CUDA demo goes one level *down* instead: hand-written forward **and
