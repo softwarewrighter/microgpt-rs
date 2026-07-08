@@ -133,12 +133,12 @@ fn init_params(rng: &mut Rng, cfg: &Cfg, vocab_size: i32) -> Vec<Array> {
 /// x * rsqrt(mean(x^2, last axis) + 1e-5), the tensor form of the scalar loop
 fn rmsnorm(x: &Array) -> Array {
     let ms = x.multiply(x).unwrap().mean_axis(-1, true).unwrap();
-    x.multiply(ops::rsqrt(&ms.add(&Array::from_f32(1e-5)).unwrap()).unwrap()).unwrap()
+    x.multiply(ops::rsqrt(ms.add(Array::from_f32(1e-5)).unwrap()).unwrap()).unwrap()
 }
 
 /// Python's `linear(x, w)` was y_o = sum_i w_oi * x_i; in tensor form that is x @ w^T
 fn linear(x: &Array, w: &Array) -> Array {
-    x.matmul(&w.transpose().unwrap()).unwrap()
+    x.matmul(w.transpose().unwrap()).unwrap()
 }
 
 /// Forward a whole batch of sequences at once: (B, T) token ids -> (B, T, vocab)
@@ -170,23 +170,23 @@ fn gpt(params: &[Array], cfg: &Cfg, token_ids: &Array) -> Array {
         let v = heads(&linear(&xn, wv));
         let head_dim = (cfg.n_embd / cfg.n_head) as f32;
         let scores = q
-            .matmul(&k.transpose_axes(&[0, 1, 3, 2]).unwrap())
+            .matmul(k.transpose_axes(&[0, 1, 3, 2]).unwrap())
             .unwrap()
-            .divide(&Array::from_f32(head_dim.sqrt()))
+            .divide(Array::from_f32(head_dim.sqrt()))
             .unwrap(); // (B, H, T, T)
-        let causal = ops::tril(&Array::ones::<bool>(&[t, t]).unwrap(), None).unwrap();
-        let masked = ops::r#where(&causal, &scores, &Array::from_f32(-1e9)).unwrap();
+        let causal = ops::tril(Array::ones::<bool>(&[t, t]).unwrap(), None).unwrap();
+        let masked = ops::r#where(&causal, &scores, Array::from_f32(-1e9)).unwrap();
         let attn = ops::softmax_axis(&masked, -1, None).unwrap();
         let out = attn.matmul(&v).unwrap(); // (B, H, T, D)
         let out =
             out.transpose_axes(&[0, 2, 1, 3]).unwrap().reshape(&[b, t, cfg.n_embd]).unwrap();
-        x = x_residual.add(&linear(&out, wo)).unwrap();
+        x = x_residual.add(linear(&out, wo)).unwrap();
 
         // 2) MLP block
         let x_residual = &x;
         let xn = rmsnorm(&x);
         let h = nn::relu(linear(&xn, fc1)).unwrap();
-        x = x_residual.add(&linear(&h, fc2)).unwrap();
+        x = x_residual.add(linear(&h, fc2)).unwrap();
     }
 
     linear(&x, &params[P_LM_HEAD]) // (B, T, vocab) logits
@@ -206,7 +206,7 @@ fn loss_fn(
     let lse = logits.logsumexp_axis(-1, true).unwrap(); // (B, T, 1)
     let (b, t) = (token_ids.shape()[0], token_ids.shape()[1]);
     let picked =
-        ops::indexing::take_along_axis(&logits, &target_ids.reshape(&[b, t, 1]).unwrap(), -1)
+        ops::indexing::take_along_axis(&logits, target_ids.reshape(&[b, t, 1]).unwrap(), -1)
             .unwrap(); // (B, T, 1)
     lse.subtract(&picked)
         .unwrap()
@@ -214,7 +214,7 @@ fn loss_fn(
         .unwrap()
         .sum(None)
         .unwrap()
-        .divide(&Array::from_f32(n_valid))
+        .divide(Array::from_f32(n_valid))
         .unwrap()
 }
 
@@ -311,13 +311,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bc2 = 1.0 - beta2.powi(step as i32 + 1);
         for i in 0..params.len() {
             let g = &grads[i];
-            m[i] = m[i].multiply(&Array::from_f32(beta1))?.add(&g.multiply(&Array::from_f32(1.0 - beta1))?)?;
-            v[i] = v[i].multiply(&Array::from_f32(beta2))?.add(&g.multiply(g)?.multiply(&Array::from_f32(1.0 - beta2))?)?;
-            let m_hat = m[i].divide(&Array::from_f32(bc1))?;
-            let v_hat = v[i].divide(&Array::from_f32(bc2))?;
+            m[i] = m[i].multiply(Array::from_f32(beta1))?.add(&g.multiply(Array::from_f32(1.0 - beta1))?)?;
+            v[i] = v[i].multiply(Array::from_f32(beta2))?.add(&g.multiply(g)?.multiply(Array::from_f32(1.0 - beta2))?)?;
+            let m_hat = m[i].divide(Array::from_f32(bc1))?;
+            let v_hat = v[i].divide(Array::from_f32(bc2))?;
             let update = m_hat
-                .multiply(&Array::from_f32(lr_t))?
-                .divide(&v_hat.sqrt()?.add(&Array::from_f32(eps_adam))?)?;
+                .multiply(Array::from_f32(lr_t))?
+                .divide(&v_hat.sqrt()?.add(Array::from_f32(eps_adam))?)?;
             params[i] = params[i].subtract(&update)?;
         }
         // MLX is lazy: force this step's graph to actually run, so it can't grow across steps
