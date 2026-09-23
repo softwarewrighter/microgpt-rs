@@ -1,0 +1,2258 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2026-09-22 Tue 17:45 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>microgpt: From Python to Rust</title>
+<meta name="author" content="Mike Wright" />
+<meta name="generator" content="Org Mode" />
+<style type="text/css">
+  #content { max-width: 60em; margin: auto; }
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #e6e6e6;
+    border-radius: 3px;
+    background-color: #f2f2f2;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: auto;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    padding: 3px;
+    color: #555;
+    background-color: #f2f2f299;
+  }
+  pre.src:hover:before { display: inline; margin-top: 14px;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-authinfo::before { content: 'Authinfo'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .equation-container {
+    display: table;
+    text-align: center;
+    width: 100%;
+  }
+  .equation {
+    vertical-align: middle;
+  }
+  .equation-label {
+    display: table-cell;
+    text-align: right;
+    vertical-align: middle;
+  }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { }
+</style>
+<script>
+  window.MathJax = {
+    tex: {
+      ams: {
+        multlineWidth: '85%'
+      },
+      tags: 'ams',
+      tagSide: 'right',
+      tagIndent: '.8em'
+    },
+    chtml: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    svg: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    output: {
+      font: 'mathjax-modern',
+      displayOverflow: 'overflow'
+    }
+  };
+</script>
+
+<script
+  id="MathJax-script"
+  async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">microgpt: From Python to Rust
+<br />
+<span class="subtitle">A literate walk through Karpathy's <code>microgpt.py</code> and its port in <code>src/main.rs</code></span>
+</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org8aedb1e">1. Introduction</a>
+<ul>
+<li><a href="#orga90b1e8">1.1. The map at a glance</a></li>
+<li><a href="#org1b36129">1.2. The one big idea</a></li>
+</ul>
+</li>
+<li><a href="#org786483a">2. Imports and randomness</a>
+<ul>
+<li><a href="#org576ffea">2.1. Python</a></li>
+<li><a href="#org4b312cb">2.2. Rust</a></li>
+<li><a href="#org4dd51db">2.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#orgc035f6e">3. Dataset</a>
+<ul>
+<li><a href="#orgb1e8ed9">3.1. Python</a></li>
+<li><a href="#org458c8ba">3.2. Rust</a></li>
+<li><a href="#orgcb714d0">3.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#orgdd646eb">4. Tokenizer</a>
+<ul>
+<li><a href="#orgfc4c1b9">4.1. Python</a></li>
+<li><a href="#orga52d7b6">4.2. Rust</a></li>
+<li><a href="#org3002b08">4.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#org6d8955e">5. Autograd</a>
+<ul>
+<li><a href="#orgd3c2b5e">5.1. Python</a></li>
+<li><a href="#org3467624">5.2. Rust: the data structures</a></li>
+<li><a href="#org30d92d6">5.3. Rust: the tape</a></li>
+<li><a href="#org3232595">5.4. Rust: the operators</a></li>
+</ul>
+</li>
+<li><a href="#org06d6275">6. Parameters</a>
+<ul>
+<li><a href="#org1f2ca13">6.1. Python</a></li>
+<li><a href="#org8a95ffc">6.2. Rust</a></li>
+<li><a href="#org71bd028">6.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#org499b083">7. Model</a>
+<ul>
+<li><a href="#org8e717e9">7.1. Python</a></li>
+<li><a href="#org76c853d">7.2. Rust</a></li>
+<li><a href="#org198cbcf">7.3. Mapping: the idioms</a></li>
+<li><a href="#org3c30884">7.4. The <code>gpt</code> function</a></li>
+</ul>
+</li>
+<li><a href="#org26561d8">8. Adam optimizer: buffers</a>
+<ul>
+<li><a href="#org122aab1">8.1. Python</a></li>
+<li><a href="#org48ce125">8.2. Rust</a></li>
+</ul>
+</li>
+<li><a href="#org1d09ec9">9. Training loop</a>
+<ul>
+<li><a href="#orge6773fc">9.1. Python</a></li>
+<li><a href="#org31484d8">9.2. Rust</a></li>
+<li><a href="#org04f94a9">9.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#orgcd70251">10. Inference</a>
+<ul>
+<li><a href="#orgff95745">10.1. Python</a></li>
+<li><a href="#orgfaa9135">10.2. Rust</a></li>
+<li><a href="#org306fca4">10.3. Mapping</a></li>
+</ul>
+</li>
+<li><a href="#org3fcbc15">11. What the tests add</a></li>
+<li><a href="#org7d930e6">12. Summary: translation rules</a></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org8aedb1e" class="outline-2">
+<h2 id="org8aedb1e"><span class="section-number-2">1.</span> Introduction</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+Andrej Karpathy's <a href="https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95">microgpt.py</a> is ~200 lines of dependency-free Python that
+trains a GPT and samples from it. Its opening docstring sets the rule for
+everything that follows:
+</p>
+
+<blockquote>
+<p>
+This file is the complete algorithm. Everything else is just efficiency.
+</p>
+</blockquote>
+
+<p>
+<code>src/main.rs</code> in this repo is a port that keeps that rule: one file, no
+crates, same six sections in the same order, the same hyperparameters, the
+same comments where they still apply. This document puts the two programs
+next to each other one section at a time, and explains each place where Rust
+had to (or chose to) say it differently.
+</p>
+
+<p>
+Each section has:
+</p>
+
+<ul class="org-ul">
+<li>the <b>Python</b> source, verbatim from the gist;</li>
+<li>the matching <b>Rust</b> source, verbatim from <code>src/main.rs</code> (line numbers
+given as <code>src/main.rs:N</code>);</li>
+<li>a <b>Mapping</b> table and notes on the translation.</li>
+</ul>
+</div>
+<div id="outline-container-orga90b1e8" class="outline-3">
+<h3 id="orga90b1e8"><span class="section-number-3">1.1.</span> The map at a glance</h3>
+<div class="outline-text-3" id="text-1-1">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">#</th>
+<th scope="col" class="org-left">Section</th>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+<th scope="col" class="org-left"><code>src/main.rs</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">0</td>
+<td class="org-left">Randomness</td>
+<td class="org-left"><code>import random</code>, <code>random.seed(42)</code></td>
+<td class="org-left">hand-written <code>struct Rng</code> (splitmix64)</td>
+<td class="org-left">14–64</td>
+</tr>
+
+<tr>
+<td class="org-right">1</td>
+<td class="org-left">Dataset</td>
+<td class="org-left"><code>urllib</code> + <code>open()</code></td>
+<td class="org-left"><code>curl</code> subprocess + <code>std::fs</code></td>
+<td class="org-left">372–389</td>
+</tr>
+
+<tr>
+<td class="org-right">2</td>
+<td class="org-left">Tokenizer</td>
+<td class="org-left"><code>sorted(set(...))</code>, <code>uchars.index</code></td>
+<td class="org-left"><code>BTreeSet&lt;char&gt;</code>, <code>HashMap&lt;char,usize&gt;</code></td>
+<td class="org-left">391–397</td>
+</tr>
+
+<tr>
+<td class="org-right">3</td>
+<td class="org-left">Autograd</td>
+<td class="org-left"><code>class Value</code>, a GC'd object graph</td>
+<td class="org-left"><code>Tape</code> arena + <code>Copy</code> handle <code>Value&lt;'t&gt;</code></td>
+<td class="org-left">66–238</td>
+</tr>
+
+<tr>
+<td class="org-right">4</td>
+<td class="org-left">Parameters</td>
+<td class="org-left"><code>state_dict</code> dict of string keys</td>
+<td class="org-left"><code>StateDict</code> / <code>LayerWeights</code> structs</td>
+<td class="org-left">240–288</td>
+</tr>
+
+<tr>
+<td class="org-right">5</td>
+<td class="org-left">Model</td>
+<td class="org-left"><code>linear</code>, <code>softmax</code>, <code>rmsnorm</code>, <code>gpt</code></td>
+<td class="org-left">same four functions over <code>&amp;[Value]</code></td>
+<td class="org-left">290–367</td>
+</tr>
+
+<tr>
+<td class="org-right">6</td>
+<td class="org-left">Adam</td>
+<td class="org-left"><code>m</code>, <code>v</code> float lists</td>
+<td class="org-left"><code>Vec&lt;f64&gt;</code> buffers</td>
+<td class="org-left">406–409</td>
+</tr>
+
+<tr>
+<td class="org-right">7</td>
+<td class="org-left">Training</td>
+<td class="org-left">top-level <code>for step</code> loop</td>
+<td class="org-left"><code>for step</code> in <code>fn main</code></td>
+<td class="org-left">411–457</td>
+</tr>
+
+<tr>
+<td class="org-right">8</td>
+<td class="org-left">Inference</td>
+<td class="org-left">top-level sampling loop</td>
+<td class="org-left">sampling loop in <code>fn main</code></td>
+<td class="org-left">459–482</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="outline-container-org1b36129" class="outline-3">
+<h3 id="org1b36129"><span class="section-number-3">1.2.</span> The one big idea</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+Almost everything is a line-for-line transliteration. The one structural
+change is autograd:
+</p>
+
+<ul class="org-ul">
+<li><b>Python</b> builds a graph of heap objects that point at their children.
+<code>backward()</code> does a DFS to find a topological order, then walks it in
+reverse. The garbage collector frees the graph when the next step drops
+its last reference.</li>
+<li><b>Rust</b> appends every node to a flat <code>Vec&lt;Node&gt;</code> (the <i>tape</i>) in the order
+the forward pass creates it. That order is already topological, so
+<code>backward()</code> is one reverse loop over the vector. Parameters live in the
+first <code>num_params</code> slots; freeing a step's whole graph is
+<code>tape.truncate(num_params)</code>.</li>
+</ul>
+
+<p>
+Keep that in mind and the rest of the port reads straight across.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org786483a" class="outline-2">
+<h2 id="org786483a"><span class="section-number-2">2.</span> Imports and randomness</h2>
+<div class="outline-text-2" id="text-2">
+</div>
+<div id="outline-container-org576ffea" class="outline-3">
+<h3 id="org576ffea"><span class="section-number-3">2.1.</span> Python</h3>
+<div class="outline-text-3" id="text-2-1">
+<div class="org-src-container">
+<pre class="src src-python">import os       # os.path.exists
+import math     # math.log, math.exp
+import random   # random.seed, random.choices, random.gauss, random.shuffle
+random.seed(42) # Let there be order among chaos
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org4b312cb" class="outline-3">
+<h3 id="org4b312cb"><span class="section-number-3">2.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-2-2">
+<div class="org-src-container">
+<pre class="src src-rust">use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
+use std::io::Write;
+use std::ops::{Add, Div, Mul, Neg, Sub};
+
+// Let there be Randomness: Rust's std has no RNG, so we make one (splitmix64 + Box-Muller)
+struct Rng(u64);
+
+impl Rng {
+    fn new(seed: u64) -&gt; Rng {
+        Rng(seed) // Let there be order among chaos
+    }
+
+    fn next_u64(&amp;mut self) -&gt; u64 {
+        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.0;
+        z = (z ^ (z &gt;&gt; 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z &gt;&gt; 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z &gt;&gt; 31)
+    }
+
+    fn uniform(&amp;mut self) -&gt; f64 {
+        (self.next_u64() &gt;&gt; 11) as f64 / (1u64 &lt;&lt; 53) as f64 // [0, 1)
+    }
+
+    fn gauss(&amp;mut self, mu: f64, sigma: f64) -&gt; f64 {
+        let u1 = loop {
+            let u = self.uniform();
+            if u &gt; 0.0 {
+                break u;
+            }
+        };
+        let u2 = self.uniform();
+        mu + sigma * (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    }
+
+    fn shuffle&lt;T&gt;(&amp;mut self, xs: &amp;mut [T]) {
+        for i in (1..xs.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            xs.swap(i, j);
+        }
+    }
+
+    /// Sample an index in proportion to the given weights (need not sum to 1).
+    fn choices(&amp;mut self, weights: &amp;[f64]) -&gt; usize {
+        let total: f64 = weights.iter().sum();
+        let mut r = self.uniform() * total;
+        for (i, w) in weights.iter().enumerate() {
+            r -= w;
+            if r &lt;= 0.0 {
+                return i;
+            }
+        }
+        weights.len() - 1
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org4dd51db" class="outline-3">
+<h3 id="org4dd51db"><span class="section-number-3">2.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-2-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+<th scope="col" class="org-left">Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>import os</code></td>
+<td class="org-left"><code>std::path::Path::exists</code></td>
+<td class="org-left">used inline in <code>main</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>import math</code></td>
+<td class="org-left"><code>f64::ln</code>, <code>f64::exp</code>, <code>f64::powf</code></td>
+<td class="org-left">methods on the float type; nothing to import</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>random.seed(42)</code></td>
+<td class="org-left"><code>let mut rng = Rng::new(42);</code></td>
+<td class="org-left">an explicit value, passed as <code>&amp;mut Rng</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>random.gauss(0, std)</code></td>
+<td class="org-left"><code>rng.gauss(0.0, std)</code></td>
+<td class="org-left">Box–Muller transform</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>random.shuffle(docs)</code></td>
+<td class="org-left"><code>rng.shuffle(&amp;mut docs)</code></td>
+<td class="org-left">Fisher–Yates</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>random.choices(range(V), weights=w)[0]</code></td>
+<td class="org-left"><code>rng.choices(&amp;w)</code></td>
+<td class="org-left">returns the index directly</td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li>Python's <code>random</code> is a module-level global. Rust has no RNG in <code>std</code>, so
+the port writes a 50-line one and threads it through as an argument —
+global mutable state would need <code>unsafe</code> or a <code>Mutex</code>.</li>
+<li>Same seed, <b>different</b> generator (splitmix64 vs. Python's Mersenne
+Twister), so the Rust run doesn't reproduce Python's exact losses or
+names. It is deterministic in its own right: same bits on every run.</li>
+<li><code>use std::ops::{Add, ...}</code> brings in the operator traits that stand in
+for Python's <code>__add__</code> and friends (see <a href="#org6d8955e">Autograd</a>).</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-orgc035f6e" class="outline-2">
+<h2 id="orgc035f6e"><span class="section-number-2">3.</span> Dataset</h2>
+<div class="outline-text-2" id="text-3">
+</div>
+<div id="outline-container-orgb1e8ed9" class="outline-3">
+<h3 id="orgb1e8ed9"><span class="section-number-3">3.1.</span> Python</h3>
+<div class="outline-text-3" id="text-3-1">
+<div class="org-src-container">
+<pre class="src src-python"># Let there be a Dataset `docs`: list[str] of documents (e.g. a list of names)
+if not os.path.exists('input.txt'):
+    import urllib.request
+    names_url = 'https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt'
+    urllib.request.urlretrieve(names_url, 'input.txt')
+docs = [line.strip() for line in open('input.txt') if line.strip()]
+random.shuffle(docs)
+print(f"num docs: {len(docs)}")
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org458c8ba" class="outline-3">
+<h3 id="org458c8ba"><span class="section-number-3">3.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-3-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Let there be a Dataset `docs`: a list of documents (e.g. a list of names)
+if !std::path::Path::new("input.txt").exists() {
+    let url = "https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt";
+    eprintln!("downloading {url} ...");
+    let ok = std::process::Command::new("curl")
+        .args(["-fsSL", "-o", "input.txt", url])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !ok {
+        eprintln!("download failed; fetch it manually:\n  curl -o input.txt {url}");
+        std::process::exit(1);
+    }
+}
+let text = std::fs::read_to_string("input.txt").expect("read input.txt");
+let mut docs: Vec&lt;&amp;str&gt; = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+rng.shuffle(&amp;mut docs);
+println!("num docs: {}", docs.len());
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgcb714d0" class="outline-3">
+<h3 id="orgcb714d0"><span class="section-number-3">3.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-3-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>os.path.exists('input.txt')</code></td>
+<td class="org-left"><code>std::path::Path::new("input.txt").exists()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>urllib.request.urlretrieve(url, path)</code></td>
+<td class="org-left"><code>Command::new("curl").args([...]).status()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>open('input.txt')</code> (line iterator)</td>
+<td class="org-left"><code>std::fs::read_to_string</code> then <code>.lines()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>[line.strip() for ... if line.strip()]</code></td>
+<td class="org-left"><code>.map(str::trim)</code>, <code>.filter(...)</code> on <code>!l.is_empty()</code>, <code>.collect()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>docs: list[str]</code></td>
+<td class="org-left"><code>docs: Vec&lt;&amp;str&gt;</code> — borrowed slices of <code>text</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>print(f"...")</code></td>
+<td class="org-left"><code>println!("...")</code></td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li><code>std</code> has no HTTP client. Rather than add a dependency, the port shells
+out to <code>curl</code> and fails with a clear message if it can't.</li>
+<li><code>Vec&lt;&amp;str&gt;</code> holds borrowed slices into the one <code>String</code> <code>text</code>, so there
+is no per-line allocation; the borrow checker makes sure <code>text</code> outlives
+<code>docs</code>.</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-orgdd646eb" class="outline-2">
+<h2 id="orgdd646eb"><span class="section-number-2">4.</span> Tokenizer</h2>
+<div class="outline-text-2" id="text-4">
+</div>
+<div id="outline-container-orgfc4c1b9" class="outline-3">
+<h3 id="orgfc4c1b9"><span class="section-number-3">4.1.</span> Python</h3>
+<div class="outline-text-3" id="text-4-1">
+<div class="org-src-container">
+<pre class="src src-python"># Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+uchars = sorted(set(''.join(docs))) # unique characters in the dataset become token ids 0..n-1
+BOS = len(uchars) # token id for a special Beginning of Sequence (BOS) token
+vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
+print(f"vocab size: {vocab_size}")
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orga52d7b6" class="outline-3">
+<h3 id="orga52d7b6"><span class="section-number-3">4.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-4-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+let uchars: Vec&lt;char&gt; =
+    docs.iter().flat_map(|d| d.chars()).collect::&lt;BTreeSet&lt;_&gt;&gt;().into_iter().collect();
+let stoi: HashMap&lt;char, usize&gt; = uchars.iter().enumerate().map(|(i, c)| (*c, i)).collect();
+let bos = uchars.len(); // token id for a special Beginning of Sequence (BOS) token
+let vocab_size = uchars.len() + 1;
+println!("vocab size: {vocab_size}");
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org3002b08" class="outline-3">
+<h3 id="org3002b08"><span class="section-number-3">4.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-4-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>''.join(docs)</code></td>
+<td class="org-left"><code>docs.iter().flat_map(...)</code> over <code>d.chars()</code> (no string built)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>sorted(set(...))</code></td>
+<td class="org-left"><code>.collect::&lt;BTreeSet&lt;_&gt;&gt;()</code> — a set that is already sorted</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>uchars.index(ch)</code> (encode)</td>
+<td class="org-left"><code>stoi[&amp;c]</code> — a <code>HashMap</code> lookup built once</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>uchars[token_id]</code> (decode)</td>
+<td class="org-left"><code>uchars[token_id]</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>BOS</code></td>
+<td class="org-left"><code>bos</code> (Rust style: lowercase for a local)</td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li>Python encodes with <code>uchars.index(ch)</code>, a linear scan per character.
+Fine for 26 letters; the port builds the inverse map <code>stoi</code> once instead.</li>
+<li><code>BTreeSet</code> does "dedupe and sort" in one step, the same job as
+<code>sorted(set(...))</code>.</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-org6d8955e" class="outline-2">
+<h2 id="org6d8955e"><span class="section-number-2">5.</span> Autograd</h2>
+<div class="outline-text-2" id="text-5">
+<p>
+This is where the two programs differ most.
+</p>
+</div>
+<div id="outline-container-orgd3c2b5e" class="outline-3">
+<h3 id="orgd3c2b5e"><span class="section-number-3">5.1.</span> Python</h3>
+<div class="outline-text-3" id="text-5-1">
+<div class="org-src-container">
+<pre class="src src-python"># Let there be Autograd to recursively apply the chain rule through a computation graph
+class Value:
+    __slots__ = ('data', 'grad', '_children', '_local_grads') # Python optimization for memory usage
+
+    def __init__(self, data, children=(), local_grads=()):
+        self.data = data                # scalar value of this node calculated during forward pass
+        self.grad = 0                   # derivative of the loss w.r.t. this node, calculated in backward pass
+        self._children = children       # children of this node in the computation graph
+        self._local_grads = local_grads # local derivative of this node w.r.t. its children
+
+    def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        return Value(self.data + other.data, (self, other), (1, 1))
+
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        return Value(self.data * other.data, (self, other), (other.data, self.data))
+
+    def __pow__(self, other): return Value(self.data**other, (self,), (other * self.data**(other-1),))
+    def log(self): return Value(math.log(self.data), (self,), (1/self.data,))
+    def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),))
+    def relu(self): return Value(max(0, self.data), (self,), (float(self.data &gt; 0),))
+    def __neg__(self): return self * -1
+    def __radd__(self, other): return self + other
+    def __sub__(self, other): return self + (-other)
+    def __rsub__(self, other): return other + (-self)
+    def __rmul__(self, other): return self * other
+    def __truediv__(self, other): return self * other**-1
+    def __rtruediv__(self, other): return other * self**-1
+
+    def backward(self):
+        topo = []
+        visited = set()
+        def build_topo(v):
+            if v not in visited:
+                visited.add(v)
+                for child in v._children:
+                    build_topo(child)
+                topo.append(v)
+        build_topo(self)
+        self.grad = 1
+        for v in reversed(topo):
+            for child, local_grad in zip(v._children, v._local_grads):
+                child.grad += local_grad * v.grad
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org3467624" class="outline-3">
+<h3 id="org3467624"><span class="section-number-3">5.2.</span> Rust: the data structures</h3>
+<div class="outline-text-3" id="text-5-2">
+<p>
+The Python <code>Value</code> object is split into three Rust types:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust">// Let there be Autograd: a tape of scalar nodes recording the forward pass,
+// replayed in reverse to apply the chain rule
+#[derive(Clone, Copy)]
+struct Parent {
+    idx: u32,        // index of the parent node on the tape
+    local_grad: f64, // d(this node) / d(parent), captured during the forward pass
+}
+
+#[derive(Clone, Copy)]
+struct Node {
+    data: f64, // scalar value of this node, calculated during the forward pass
+    grad: f64, // derivative of the loss w.r.t. this node, calculated in the backward pass
+    parents: [Option&lt;Parent&gt;; 2], // every primitive op has at most 2 inputs
+}
+
+struct Tape {
+    nodes: RefCell&lt;Vec&lt;Node&gt;&gt;,
+}
+
+/// A lightweight, copyable handle to one node on the tape.
+#[derive(Clone, Copy)]
+struct Value&lt;'t&gt; {
+    tape: &amp;'t Tape,
+    idx: u32,
+}
+</pre>
+</div>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python <code>Value</code> field</th>
+<th scope="col" class="org-left">Rust</th>
+<th scope="col" class="org-left">Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>self.data</code></td>
+<td class="org-left"><code>Node::data: f64</code></td>
+<td class="org-left">same</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>self.grad</code></td>
+<td class="org-left"><code>Node::grad: f64</code></td>
+<td class="org-left">same</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>self._children</code> (tuple)</td>
+<td class="org-left"><code>Node::parents[i].idx: u32</code></td>
+<td class="org-left">an index into the tape, not a pointer</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>self._local_grads</code> (tuple)</td>
+<td class="org-left"><code>Node::parents[i].local_grad: f64</code></td>
+<td class="org-left">stored next to the index it belongs to</td>
+</tr>
+
+<tr>
+<td class="org-left">tuple of length 0–2</td>
+<td class="org-left"><code>[Option&lt;Parent&gt;; 2]</code></td>
+<td class="org-left">fixed size: no allocation per node</td>
+</tr>
+
+<tr>
+<td class="org-left">the object itself</td>
+<td class="org-left"><code>Value&lt;'t&gt; { tape, idx }</code></td>
+<td class="org-left">a 16-byte <code>Copy</code> handle</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__slots__</code></td>
+<td class="org-left">(not needed)</td>
+<td class="org-left">a Rust struct is always packed</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Naming: Python calls a node's inputs its <code>_children</code> (graph-traversal
+terms); the port calls them <code>parents</code> (dataflow terms: the nodes this one
+was computed <i>from</i>). It is the same edge, named from the other end.
+</p>
+
+<p>
+Why a tape instead of <code>Rc&lt;RefCell&lt;Node&gt;&gt;</code>? A graph of shared, mutable,
+reference-counted nodes is the literal translation of the Python, and in
+Rust it's awkward: <code>.borrow()</code> at every use, <code>Rc::clone</code> at every
+operator, and a <code>HashSet</code> of pointers for <code>visited</code>. The tape avoids all
+of that:
+</p>
+
+<ul class="org-ul">
+<li><code>Value</code> is <code>Copy</code>, so <code>a * b + c</code> reads exactly like Python — no
+<code>.clone()</code> anywhere.</li>
+<li>The lifetime <code>'t</code> ties every <code>Value</code> to its <code>Tape</code>. The compiler rejects
+any <code>Value</code> that would outlive the tape.</li>
+<li><code>RefCell&lt;Vec&lt;Node&gt;&gt;</code> provides the interior mutability Python gets for
+free. The ops only need <code>&amp;Tape</code>, so many <code>Value</code> handles can share it.</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org30d92d6" class="outline-3">
+<h3 id="org30d92d6"><span class="section-number-3">5.3.</span> Rust: the tape</h3>
+<div class="outline-text-3" id="text-5-3">
+<div class="org-src-container">
+<pre class="src src-rust">impl Tape {
+    fn new() -&gt; Tape {
+        Tape { nodes: RefCell::new(Vec::new()) }
+    }
+
+    fn len(&amp;self) -&gt; usize {
+        self.nodes.borrow().len()
+    }
+
+    /// Discard every node past `len` -- frees a whole computation graph in O(1).
+    fn truncate(&amp;self, len: usize) {
+        self.nodes.borrow_mut().truncate(len);
+    }
+
+    /// A leaf node (parameter or constant).
+    fn value(&amp;self, data: f64) -&gt; Value&lt;'_&gt; {
+        self.push(data, [None, None])
+    }
+
+    fn push(&amp;self, data: f64, parents: [Option&lt;Parent&gt;; 2]) -&gt; Value&lt;'_&gt; {
+        let mut nodes = self.nodes.borrow_mut();
+        let idx = u32::try_from(nodes.len()).expect("tape overflow");
+        nodes.push(Node { data, grad: 0.0, parents });
+        Value { tape: self, idx }
+    }
+
+    /// The tape is appended in forward order, which *is* a topological order of the
+    /// computation graph -- so backprop is one reverse sweep, no sorting required.
+    fn backward(&amp;self, loss: Value) {
+        let mut nodes = self.nodes.borrow_mut();
+        nodes[loss.idx as usize].grad = 1.0;
+        for i in (0..=loss.idx as usize).rev() {
+            let Node { grad, parents, .. } = nodes[i];
+            for p in parents.into_iter().flatten() {
+                nodes[p.idx as usize].grad += p.local_grad * grad;
+            }
+        }
+    }
+}
+</pre>
+</div>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>Value(x)</code> (leaf)</td>
+<td class="org-left"><code>tape.value(x)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>Value(data, children, local_grads)</code></td>
+<td class="org-left"><code>tape.push(data, [parent_a, parent_b])</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>loss.backward()</code></td>
+<td class="org-left"><code>tape.backward(loss)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>build_topo</code> DFS + <code>visited</code> set</td>
+<td class="org-left"><b>gone</b>: tape order is already topological</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>for v in reversed(topo)</code></td>
+<td class="org-left"><code>for i in (0..=loss.idx).rev()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>child.grad +</code> local_grad * v.grad=</td>
+<td class="org-left"><code>nodes[p.idx].grad +</code> p.local_grad * grad=</td>
+</tr>
+
+<tr>
+<td class="org-left">GC frees the old graph</td>
+<td class="org-left"><code>tape.truncate(num_params)</code></td>
+</tr>
+</tbody>
+</table>
+
+<p>
+A node can only refer to nodes created before it, so every parent index is
+smaller than its child's. Walking indices downward therefore visits each
+node after everything that depends on it, which is the property the
+Python DFS exists to establish. The inner loop is identical in both.
+</p>
+</div>
+</div>
+<div id="outline-container-org3232595" class="outline-3">
+<h3 id="org3232595"><span class="section-number-3">5.4.</span> Rust: the operators</h3>
+<div class="outline-text-3" id="text-5-4">
+<div class="org-src-container">
+<pre class="src src-rust">impl&lt;'t&gt; Value&lt;'t&gt; {
+    fn data(self) -&gt; f64 {
+        self.tape.nodes.borrow()[self.idx as usize].data
+    }
+
+    #[allow(dead_code)] // the training loop reads grads in bulk; this is for the grad-check tests
+    fn grad(self) -&gt; f64 {
+        self.tape.nodes.borrow()[self.idx as usize].grad
+    }
+
+    fn parent(self, local_grad: f64) -&gt; Option&lt;Parent&gt; {
+        Some(Parent { idx: self.idx, local_grad })
+    }
+
+    fn powf(self, k: f64) -&gt; Value&lt;'t&gt; {
+        let a = self.data();
+        self.tape.push(a.powf(k), [self.parent(k * a.powf(k - 1.0)), None])
+    }
+
+    fn log(self) -&gt; Value&lt;'t&gt; {
+        let a = self.data();
+        self.tape.push(a.ln(), [self.parent(1.0 / a), None])
+    }
+
+    fn exp(self) -&gt; Value&lt;'t&gt; {
+        let e = self.data().exp();
+        self.tape.push(e, [self.parent(e), None])
+    }
+
+    fn relu(self) -&gt; Value&lt;'t&gt; {
+        let a = self.data();
+        self.tape.push(a.max(0.0), [self.parent(if a &gt; 0.0 { 1.0 } else { 0.0 }), None])
+    }
+}
+
+impl&lt;'t&gt; Add for Value&lt;'t&gt; {
+    type Output = Value&lt;'t&gt;;
+    fn add(self, other: Value&lt;'t&gt;) -&gt; Value&lt;'t&gt; {
+        self.tape.push(self.data() + other.data(), [self.parent(1.0), other.parent(1.0)])
+    }
+}
+
+impl&lt;'t&gt; Sub for Value&lt;'t&gt; {
+    type Output = Value&lt;'t&gt;;
+    fn sub(self, other: Value&lt;'t&gt;) -&gt; Value&lt;'t&gt; {
+        self.tape.push(self.data() - other.data(), [self.parent(1.0), other.parent(-1.0)])
+    }
+}
+
+impl&lt;'t&gt; Mul for Value&lt;'t&gt; {
+    type Output = Value&lt;'t&gt;;
+    fn mul(self, other: Value&lt;'t&gt;) -&gt; Value&lt;'t&gt; {
+        let (a, b) = (self.data(), other.data());
+        self.tape.push(a * b, [self.parent(b), other.parent(a)])
+    }
+}
+
+impl&lt;'t&gt; Div for Value&lt;'t&gt; {
+    type Output = Value&lt;'t&gt;;
+    fn div(self, other: Value&lt;'t&gt;) -&gt; Value&lt;'t&gt; {
+        let (a, b) = (self.data(), other.data());
+        self.tape.push(a / b, [self.parent(1.0 / b), other.parent(-a / (b * b))])
+    }
+}
+
+impl&lt;'t&gt; Neg for Value&lt;'t&gt; {
+    type Output = Value&lt;'t&gt;;
+    fn neg(self) -&gt; Value&lt;'t&gt; {
+        self.tape.push(-self.data(), [self.parent(-1.0), None])
+    }
+}
+
+// Mixed Value-and-float ops: constants need no node of their own, they just have no gradient
+impl&lt;'t&gt; Add&lt;f64&gt; for Value&lt;'t&gt; { /* data + c,  local grad 1   */ }
+impl&lt;'t&gt; Sub&lt;f64&gt; for Value&lt;'t&gt; { /* data - c,  local grad 1   */ }
+impl&lt;'t&gt; Mul&lt;f64&gt; for Value&lt;'t&gt; { /* data * c,  local grad c   */ }
+impl&lt;'t&gt; Div&lt;f64&gt; for Value&lt;'t&gt; { /* data / c,  local grad 1/c */ }
+impl&lt;'t&gt; Mul&lt;Value&lt;'t&gt;&gt; for f64 { /* c * v  ==  v * c          */ }
+</pre>
+</div>
+
+<p>
+(The five mixed-type impls are abbreviated here; see <code>src/main.rs:204–238</code>.)
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python dunder</th>
+<th scope="col" class="org-left">Rust trait / method</th>
+<th scope="col" class="org-left">Local gradient(s)</th>
+<th scope="col" class="org-left">Difference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>__add__</code>, <code>__radd__</code></td>
+<td class="org-left"><code>impl Add</code>, <code>impl Add&lt;f64&gt;</code></td>
+<td class="org-left">1, 1</td>
+<td class="org-left">—</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__mul__</code>, <code>__rmul__</code></td>
+<td class="org-left"><code>impl Mul</code>, <code>Mul&lt;f64&gt;</code>, <code>f64: Mul&lt;Value&gt;</code></td>
+<td class="org-left">b, a</td>
+<td class="org-left">—</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__sub__</code> (<code>self + (-other)</code>)</td>
+<td class="org-left"><code>impl Sub</code>, <code>Sub&lt;f64&gt;</code></td>
+<td class="org-left">1, −1</td>
+<td class="org-left">one primitive node instead of neg + add</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__truediv__</code> (<code>self * other**-1</code>)</td>
+<td class="org-left"><code>impl Div</code>, <code>Div&lt;f64&gt;</code></td>
+<td class="org-left">1/b, −a/b²</td>
+<td class="org-left">one primitive node instead of pow + mul</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__neg__</code> (<code>self * -1</code>)</td>
+<td class="org-left"><code>impl Neg</code></td>
+<td class="org-left">−1</td>
+<td class="org-left">no constant leaf for <code>-1</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>__pow__</code></td>
+<td class="org-left"><code>.powf(k)</code></td>
+<td class="org-left">k·aᵏ⁻¹</td>
+<td class="org-left">Rust has no <code>**</code> operator</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>log</code>, <code>exp</code>, <code>relu</code></td>
+<td class="org-left"><code>.log()</code>, <code>.exp()</code>, <code>.relu()</code></td>
+<td class="org-left">1/a, eᵃ, [a&gt;0]</td>
+<td class="org-left">—</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>isinstance(other, Value)</code></td>
+<td class="org-left">overload on the type <code>f64</code></td>
+<td class="org-left">—</td>
+<td class="org-left">resolved at compile time; no leaf for constants</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Python builds <code>-</code>, <code>/</code> and unary <code>-</code> out of <code>+</code>, <code>*</code> and <code>**</code>, and wraps
+every bare number in its own <code>Value</code>. Rust gives each operator its own
+node with the analytic derivative, and treats a float constant as a node
+with one parent. The math is the same. The graph is smaller, and
+<code>src/main.rs:489–553</code> checks every operator against finite differences.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org06d6275" class="outline-2">
+<h2 id="org06d6275"><span class="section-number-2">6.</span> Parameters</h2>
+<div class="outline-text-2" id="text-6">
+</div>
+<div id="outline-container-org1f2ca13" class="outline-3">
+<h3 id="org1f2ca13"><span class="section-number-3">6.1.</span> Python</h3>
+<div class="outline-text-3" id="text-6-1">
+<div class="org-src-container">
+<pre class="src src-python"># Initialize the parameters, to store the knowledge of the model
+n_layer = 1     # depth of the transformer neural network (number of layers)
+n_embd = 16     # width of the network (embedding dimension)
+block_size = 16 # maximum context length of the attention window (note: the longest name is 15 characters)
+n_head = 4      # number of attention heads
+head_dim = n_embd // n_head # derived dimension of each head
+matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
+state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
+for i in range(n_layer):
+    state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
+    state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
+params = [p for mat in state_dict.values() for row in mat for p in row] # flatten params into a single list[Value]
+print(f"num params: {len(params)}")
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org8a95ffc" class="outline-3">
+<h3 id="org8a95ffc"><span class="section-number-3">6.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-6-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Initialize the parameters, to store the knowledge of the model
+const N_LAYER: usize = 1; // depth of the transformer neural network (number of layers)
+const N_EMBD: usize = 16; // width of the network (embedding dimension)
+const BLOCK_SIZE: usize = 16; // maximum context length of the attention window
+const N_HEAD: usize = 4; // number of attention heads
+const HEAD_DIM: usize = N_EMBD / N_HEAD; // derived dimension of each head
+
+type Mat&lt;'t&gt; = Vec&lt;Vec&lt;Value&lt;'t&gt;&gt;&gt;;
+
+struct LayerWeights&lt;'t&gt; {
+    attn_wq: Mat&lt;'t&gt;,
+    attn_wk: Mat&lt;'t&gt;,
+    attn_wv: Mat&lt;'t&gt;,
+    attn_wo: Mat&lt;'t&gt;,
+    mlp_fc1: Mat&lt;'t&gt;,
+    mlp_fc2: Mat&lt;'t&gt;,
+}
+
+struct StateDict&lt;'t&gt; {
+    wte: Mat&lt;'t&gt;,
+    wpe: Mat&lt;'t&gt;,
+    lm_head: Mat&lt;'t&gt;,
+    layers: Vec&lt;LayerWeights&lt;'t&gt;&gt;,
+}
+
+fn matrix&lt;'t&gt;(tape: &amp;'t Tape, rng: &amp;mut Rng, nout: usize, nin: usize) -&gt; Mat&lt;'t&gt; {
+    let std = 0.08;
+    (0..nout).map(|_| (0..nin).map(|_| tape.value(rng.gauss(0.0, std))).collect()).collect()
+}
+
+impl&lt;'t&gt; StateDict&lt;'t&gt; {
+    fn init(tape: &amp;'t Tape, rng: &amp;mut Rng, vocab_size: usize) -&gt; StateDict&lt;'t&gt; {
+        StateDict {
+            wte: matrix(tape, rng, vocab_size, N_EMBD),
+            wpe: matrix(tape, rng, BLOCK_SIZE, N_EMBD),
+            lm_head: matrix(tape, rng, vocab_size, N_EMBD),
+            layers: (0..N_LAYER)
+                .map(|_| LayerWeights {
+                    attn_wq: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wk: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wv: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wo: matrix(tape, rng, N_EMBD, N_EMBD),
+                    mlp_fc1: matrix(tape, rng, 4 * N_EMBD, N_EMBD),
+                    mlp_fc2: matrix(tape, rng, N_EMBD, 4 * N_EMBD),
+                })
+                .collect(),
+        }
+    }
+}
+
+// ... later, in main():
+// Parameters live in the first `num_params` slots of the tape and persist across steps;
+// everything past them is one step's computation graph, discarded by truncate()
+let tape = Tape::new();
+let sd = StateDict::init(&amp;tape, &amp;mut rng, vocab_size);
+let num_params = tape.len();
+println!("num params: {num_params}");
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org71bd028" class="outline-3">
+<h3 id="org71bd028"><span class="section-number-3">6.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-6-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>n_layer</code>, <code>n_embd</code>, &#x2026; (module globals)</td>
+<td class="org-left"><code>const N_LAYER</code>, <code>const N_EMBD</code>, &#x2026;</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>n_embd // n_head</code></td>
+<td class="org-left"><code>N_EMBD / N_HEAD</code> (integer division on <code>usize</code>)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>matrix = lambda nout, nin, std=0.08:</code></td>
+<td class="org-left"><code>fn matrix(tape, rng, nout, nin)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>list[list[Value]]</code></td>
+<td class="org-left"><code>type Mat&lt;'t&gt; = Vec&lt;Vec&lt;Value&lt;'t&gt;&gt;&gt;</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>state_dict['wte']</code></td>
+<td class="org-left"><code>sd.wte</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>state_dict[f'layer{li}.attn_wq']</code></td>
+<td class="org-left"><code>sd.layers[li].attn_wq</code> (or <code>layer.attn_wq</code>)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>params</code> (flattened <code>list[Value]</code>)</td>
+<td class="org-left">tape slots <code>0..num_params</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>len(params)</code></td>
+<td class="org-left"><code>tape.len()</code> right after init</td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li>String keys become struct fields, so a typo in a weight name is a
+compile error instead of a <code>KeyError</code> at runtime.</li>
+<li>The per-layer weights are grouped into <code>LayerWeights</code>, and <code>gpt</code> loops
+over <code>sd.layers</code> rather than formatting <code>f'layer{li}...'</code> keys.</li>
+<li><b>There is no <code>params</code> list.</b> Parameters are the first nodes pushed onto
+the empty tape, so they occupy slots <code>0..num_params</code>. Adam walks
+<code>nodes[0..num_params]</code> directly. This depends on nothing else touching
+the tape before <code>StateDict::init</code>.</li>
+<li>The initialization order is wte, wpe, lm_head, then per layer q, k, v,
+o, fc1, fc2, the same order as the Python. (It can't give the same
+numbers, since the RNG differs.)</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-org499b083" class="outline-2">
+<h2 id="org499b083"><span class="section-number-2">7.</span> Model</h2>
+<div class="outline-text-2" id="text-7">
+</div>
+<div id="outline-container-org8e717e9" class="outline-3">
+<h3 id="org8e717e9"><span class="section-number-3">7.1.</span> Python</h3>
+<div class="outline-text-3" id="text-7-1">
+<div class="org-src-container">
+<pre class="src src-python"># Define the model architecture: a function mapping tokens and parameters to logits over what comes next
+# Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -&gt; rmsnorm, no biases, GeLU -&gt; ReLU
+def linear(x, w):
+    return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
+
+def softmax(logits):
+    max_val = max(val.data for val in logits)
+    exps = [(val - max_val).exp() for val in logits]
+    total = sum(exps)
+    return [e / total for e in exps]
+
+def rmsnorm(x):
+    ms = sum(xi * xi for xi in x) / len(x)
+    scale = (ms + 1e-5) ** -0.5
+    return [xi * scale for xi in x]
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org76c853d" class="outline-3">
+<h3 id="org76c853d"><span class="section-number-3">7.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-7-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Define the model architecture: a function mapping tokens and parameters to logits over what comes next
+// Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -&gt; rmsnorm, no biases, GeLU -&gt; ReLU
+fn linear&lt;'t&gt;(x: &amp;[Value&lt;'t&gt;], w: &amp;[Vec&lt;Value&lt;'t&gt;&gt;]) -&gt; Vec&lt;Value&lt;'t&gt;&gt; {
+    w.iter()
+        .map(|row| row.iter().zip(x).map(|(wi, xi)| *wi * *xi).reduce(|a, b| a + b).unwrap())
+        .collect()
+}
+
+fn softmax&lt;'t&gt;(logits: &amp;[Value&lt;'t&gt;]) -&gt; Vec&lt;Value&lt;'t&gt;&gt; {
+    let max_val = logits.iter().map(|v| v.data()).fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec&lt;Value&lt;'t&gt;&gt; = logits.iter().map(|v| (*v - max_val).exp()).collect();
+    let total = exps.iter().copied().reduce(|a, b| a + b).unwrap();
+    exps.iter().map(|e| *e / total).collect()
+}
+
+fn rmsnorm&lt;'t&gt;(x: &amp;[Value&lt;'t&gt;]) -&gt; Vec&lt;Value&lt;'t&gt;&gt; {
+    let ms = x.iter().map(|xi| *xi * *xi).reduce(|a, b| a + b).unwrap() / x.len() as f64;
+    let scale = (ms + 1e-5).powf(-0.5);
+    x.iter().map(|xi| *xi * scale).collect()
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org198cbcf" class="outline-3">
+<h3 id="org198cbcf"><span class="section-number-3">7.3.</span> Mapping: the idioms</h3>
+<div class="outline-text-3" id="text-7-3">
+<p>
+These few patterns cover almost the whole model. (Closures are shortened
+in the table because a <code>|x|</code> would break an org table; the real code is
+in the blocks above.)
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python idiom</th>
+<th scope="col" class="org-left">Rust idiom</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>[f(a) for a in xs]</code></td>
+<td class="org-left"><code>xs.iter().map(f).collect()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>zip(xs, ys)</code></td>
+<td class="org-left"><code>xs.iter().zip(ys)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>sum(values)</code></td>
+<td class="org-left"><code>.reduce(add).unwrap()</code> (closure adds two =Value=s)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>max(v.data for v in xs)</code></td>
+<td class="org-left"><code>.map(data).fold(f64::NEG_INFINITY, f64::max)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>x ** -0.5</code></td>
+<td class="org-left"><code>x.powf(-0.5)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>len(x)</code> inside arithmetic</td>
+<td class="org-left"><code>x.len() as f64</code> (conversions are explicit)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>list[Value]</code> argument</td>
+<td class="org-left"><code>&amp;[Value&lt;'t&gt;]</code> (a borrowed slice)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>list[Value]</code> return</td>
+<td class="org-left"><code>Vec&lt;Value&lt;'t&gt;&gt;</code></td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Why <code>reduce</code> and not <code>.sum()</code>: Python's <code>sum()</code> starts from the integer
+<code>0</code>, which becomes a constant <code>Value(0)</code> leaf plus one extra add node.
+Rust's <code>Iterator::sum</code> would need an <code>impl Sum for Value</code> and a
+zero-valued starting node, which needs a tape reference to create.
+<code>reduce</code> starts from the first element, so no zero node is needed. It
+panics (<code>unwrap</code>) on an empty input, which can't happen here.
+</p>
+
+<p>
+<code>*wi * *xi</code> dereferences the <code>&amp;Value</code> that <code>.iter()</code> yields; because
+<code>Value</code> is <code>Copy</code>, that's a 16-byte copy, not a clone of the node.
+</p>
+</div>
+</div>
+<div id="outline-container-org3c30884" class="outline-3">
+<h3 id="org3c30884"><span class="section-number-3">7.4.</span> The <code>gpt</code> function</h3>
+<div class="outline-text-3" id="text-7-4">
+</div>
+<div id="outline-container-orgf46a5aa" class="outline-4">
+<h4 id="orgf46a5aa"><span class="section-number-4">7.4.1.</span> Python</h4>
+<div class="outline-text-4" id="text-7-4-1">
+<div class="org-src-container">
+<pre class="src src-python">def gpt(token_id, pos_id, keys, values):
+    tok_emb = state_dict['wte'][token_id] # token embedding
+    pos_emb = state_dict['wpe'][pos_id] # position embedding
+    x = [t + p for t, p in zip(tok_emb, pos_emb)] # joint token and position embedding
+    x = rmsnorm(x) # note: not redundant due to backward pass via the residual connection
+
+    for li in range(n_layer):
+        # 1) Multi-head Attention block
+        x_residual = x
+        x = rmsnorm(x)
+        q = linear(x, state_dict[f'layer{li}.attn_wq'])
+        k = linear(x, state_dict[f'layer{li}.attn_wk'])
+        v = linear(x, state_dict[f'layer{li}.attn_wv'])
+        keys[li].append(k)
+        values[li].append(v)
+        x_attn = []
+        for h in range(n_head):
+            hs = h * head_dim
+            q_h = q[hs:hs+head_dim]
+            k_h = [ki[hs:hs+head_dim] for ki in keys[li]]
+            v_h = [vi[hs:hs+head_dim] for vi in values[li]]
+            attn_logits = [sum(q_h[j] * k_h[t][j] for j in range(head_dim)) / head_dim**0.5 for t in range(len(k_h))]
+            attn_weights = softmax(attn_logits)
+            head_out = [sum(attn_weights[t] * v_h[t][j] for t in range(len(v_h))) for j in range(head_dim)]
+            x_attn.extend(head_out)
+        x = linear(x_attn, state_dict[f'layer{li}.attn_wo'])
+        x = [a + b for a, b in zip(x, x_residual)]
+        # 2) MLP block
+        x_residual = x
+        x = rmsnorm(x)
+        x = linear(x, state_dict[f'layer{li}.mlp_fc1'])
+        x = [xi.relu() for xi in x]
+        x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
+        x = [a + b for a, b in zip(x, x_residual)]
+
+    logits = linear(x, state_dict['lm_head'])
+    return logits
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orged5e677" class="outline-4">
+<h4 id="orged5e677"><span class="section-number-4">7.4.2.</span> Rust</h4>
+<div class="outline-text-4" id="text-7-4-2">
+<div class="org-src-container">
+<pre class="src src-rust">type KvCache&lt;'t&gt; = Vec&lt;Vec&lt;Vec&lt;Value&lt;'t&gt;&gt;&gt;&gt;; // [layer][position][n_embd]
+
+fn gpt&lt;'t&gt;(
+    sd: &amp;StateDict&lt;'t&gt;,
+    token_id: usize,
+    pos_id: usize,
+    keys: &amp;mut KvCache&lt;'t&gt;,
+    values: &amp;mut KvCache&lt;'t&gt;,
+) -&gt; Vec&lt;Value&lt;'t&gt;&gt; {
+    let tok_emb = &amp;sd.wte[token_id]; // token embedding
+    let pos_emb = &amp;sd.wpe[pos_id]; // position embedding
+    let mut x: Vec&lt;Value&lt;'t&gt;&gt; = tok_emb.iter().zip(pos_emb).map(|(t, p)| *t + *p).collect();
+    x = rmsnorm(&amp;x); // note: not redundant due to backward pass via the residual connection
+
+    for (li, layer) in sd.layers.iter().enumerate() {
+        // 1) Multi-head Attention block
+        let x_residual = x.clone();
+        x = rmsnorm(&amp;x);
+        let q = linear(&amp;x, &amp;layer.attn_wq);
+        let k = linear(&amp;x, &amp;layer.attn_wk);
+        let v = linear(&amp;x, &amp;layer.attn_wv);
+        keys[li].push(k);
+        values[li].push(v);
+        let t_len = keys[li].len();
+        let mut x_attn = Vec::with_capacity(N_EMBD);
+        for h in 0..N_HEAD {
+            let hs = h * HEAD_DIM;
+            let q_h = &amp;q[hs..hs + HEAD_DIM];
+            let attn_logits: Vec&lt;Value&lt;'t&gt;&gt; = (0..t_len)
+                .map(|t| {
+                    let k_h = &amp;keys[li][t][hs..hs + HEAD_DIM];
+                    let dot = (0..HEAD_DIM).map(|j| q_h[j] * k_h[j]).reduce(|a, b| a + b).unwrap();
+                    dot / (HEAD_DIM as f64).sqrt()
+                })
+                .collect();
+            let attn_weights = softmax(&amp;attn_logits);
+            for j in 0..HEAD_DIM {
+                let head_out = (0..t_len)
+                    .map(|t| attn_weights[t] * values[li][t][hs + j])
+                    .reduce(|a, b| a + b)
+                    .unwrap();
+                x_attn.push(head_out);
+            }
+        }
+        x = linear(&amp;x_attn, &amp;layer.attn_wo);
+        x = x.iter().zip(&amp;x_residual).map(|(a, b)| *a + *b).collect();
+        // 2) MLP block
+        let x_residual = x.clone();
+        x = rmsnorm(&amp;x);
+        x = linear(&amp;x, &amp;layer.mlp_fc1);
+        x = x.iter().map(|xi| xi.relu()).collect();
+        x = linear(&amp;x, &amp;layer.mlp_fc2);
+        x = x.iter().zip(&amp;x_residual).map(|(a, b)| *a + *b).collect();
+    }
+
+    linear(&amp;x, &amp;sd.lm_head) // logits
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org1ac7770" class="outline-4">
+<h4 id="org1ac7770"><span class="section-number-4">7.4.3.</span> Mapping</h4>
+<div class="outline-text-4" id="text-7-4-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>gpt(token_id, pos_id, keys, values)</code></td>
+<td class="org-left"><code>gpt(&amp;sd, token_id, pos_id, &amp;mut keys, &amp;mut values)</code></td>
+</tr>
+
+<tr>
+<td class="org-left">global <code>state_dict</code></td>
+<td class="org-left">explicit <code>sd: &amp;StateDict</code> argument</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>keys</code> (<code>list[list[list[Value]]]</code>, mutated)</td>
+<td class="org-left"><code>keys: &amp;mut KvCache&lt;'t&gt;</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>for li in range(n_layer)</code></td>
+<td class="org-left"><code>for (li, layer) in sd.layers.iter().enumerate()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>x_residual = x</code> (rebinding a reference)</td>
+<td class="org-left"><code>let x_residual = x.clone();</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>keys[li].append(k)</code></td>
+<td class="org-left"><code>keys[li].push(k)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>q[hs:hs+head_dim]</code> (copies a list)</td>
+<td class="org-left"><code>&amp;q[hs..hs + HEAD_DIM]</code> (borrows a slice)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>k_h = [ki[hs:hs+head_dim] for ki in keys[li]]</code></td>
+<td class="org-left">slices taken in place inside the <code>.map</code> closure</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>head_dim**0.5</code></td>
+<td class="org-left"><code>(HEAD_DIM as f64).sqrt()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>x_attn.extend(head_out)</code></td>
+<td class="org-left"><code>x_attn.push(head_out)</code> once per <code>j</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>return logits</code></td>
+<td class="org-left">tail expression <code>linear(&amp;x, &amp;sd.lm_head)</code></td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li><b>Residuals.</b> In Python, <code>x_residual = x</code> keeps the old list alive
+because the next line rebinds <code>x</code> to a new list. Rust does the same with
+<code>x.clone()</code>. It copies 16 handles, not the nodes they refer to.</li>
+<li><b>KV cache.</b> In Python the lists are mutated in place through shared
+references; Rust says so with <code>&amp;mut</code>. The cache stores <code>Value</code> handles
+that point into the current graph, which is why <code>main</code> drops it before
+truncating the tape (see <a href="#org1d09ec9">Training loop</a>).</li>
+<li><b>Per-head slices.</b> Python copies <code>k_h</code> and <code>v_h</code> for every head. Rust
+indexes the cache directly (<code>keys[li][t][hs..hs + HEAD_DIM]</code>,
+<code>values[li][t][hs + j]</code>), so nothing is copied. The arithmetic and
+summation order are the same.</li>
+<li><b>Dividing by √d.</b> In Python this is <code>Value / float</code>: the float is
+wrapped in a <code>Value</code>, raised to <code>**-1</code>, then multiplied. In Rust it's
+one <code>Div&lt;f64&gt;</code> node.</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="outline-container-org26561d8" class="outline-2">
+<h2 id="org26561d8"><span class="section-number-2">8.</span> Adam optimizer: buffers</h2>
+<div class="outline-text-2" id="text-8">
+</div>
+<div id="outline-container-org122aab1" class="outline-3">
+<h3 id="org122aab1"><span class="section-number-3">8.1.</span> Python</h3>
+<div class="outline-text-3" id="text-8-1">
+<div class="org-src-container">
+<pre class="src src-python"># Let there be Adam, the blessed optimizer and its buffers
+learning_rate, beta1, beta2, eps_adam = 0.01, 0.85, 0.99, 1e-8
+m = [0.0] * len(params) # first moment buffer
+v = [0.0] * len(params) # second moment buffer
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org48ce125" class="outline-3">
+<h3 id="org48ce125"><span class="section-number-3">8.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-8-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Let there be Adam, the blessed optimizer and its buffers
+let (learning_rate, beta1, beta2, eps_adam) = (0.01, 0.85, 0.99, 1e-8);
+let mut m = vec![0.0; num_params]; // first moment buffer
+let mut v = vec![0.0; num_params]; // second moment buffer
+</pre>
+</div>
+
+<p>
+Python's tuple unpacking maps to a destructuring <code>let</code>, and
+<code>[0.0] * n</code> maps to <code>vec![0.0; n]</code>. Everything else is unchanged.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org1d09ec9" class="outline-2">
+<h2 id="org1d09ec9"><span class="section-number-2">9.</span> Training loop</h2>
+<div class="outline-text-2" id="text-9">
+</div>
+<div id="outline-container-orge6773fc" class="outline-3">
+<h3 id="orge6773fc"><span class="section-number-3">9.1.</span> Python</h3>
+<div class="outline-text-3" id="text-9-1">
+<div class="org-src-container">
+<pre class="src src-python"># Repeat in sequence
+num_steps = 1000 # number of training steps
+for step in range(num_steps):
+
+    # Take single document, tokenize it, surround it with BOS special token on both sides
+    doc = docs[step % len(docs)]
+    tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
+    n = min(block_size, len(tokens) - 1)
+
+    # Forward the token sequence through the model, building up the computation graph all the way to the loss
+    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+    losses = []
+    for pos_id in range(n):
+        token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
+        logits = gpt(token_id, pos_id, keys, values)
+        probs = softmax(logits)
+        loss_t = -probs[target_id].log()
+        losses.append(loss_t)
+    loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
+
+    # Backward the loss, calculating the gradients with respect to all model parameters
+    loss.backward()
+
+    # Adam optimizer update: update the model parameters based on the corresponding gradients
+    lr_t = learning_rate * (1 - step / num_steps) # linear learning rate decay
+    for i, p in enumerate(params):
+        m[i] = beta1 * m[i] + (1 - beta1) * p.grad
+        v[i] = beta2 * v[i] + (1 - beta2) * p.grad ** 2
+        m_hat = m[i] / (1 - beta1 ** (step + 1))
+        v_hat = v[i] / (1 - beta2 ** (step + 1))
+        p.data -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
+        p.grad = 0
+
+    print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org31484d8" class="outline-3">
+<h3 id="org31484d8"><span class="section-number-3">9.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-9-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Repeat in sequence
+let num_steps = 1000;
+for step in 0..num_steps {
+    // Take a single document, tokenize it, surround it with BOS special tokens on both sides
+    let doc = docs[step % docs.len()];
+    let mut tokens = vec![bos];
+    tokens.extend(doc.chars().map(|c| stoi[&amp;c]));
+    tokens.push(bos);
+    let n = BLOCK_SIZE.min(tokens.len() - 1);
+
+    // Forward the token sequence through the model, building up the computation graph to the loss
+    let mut keys: KvCache = vec![Vec::new(); N_LAYER];
+    let mut values: KvCache = vec![Vec::new(); N_LAYER];
+    let mut losses = Vec::with_capacity(n);
+    for pos_id in 0..n {
+        let (token_id, target_id) = (tokens[pos_id], tokens[pos_id + 1]);
+        let logits = gpt(&amp;sd, token_id, pos_id, &amp;mut keys, &amp;mut values);
+        let probs = softmax(&amp;logits);
+        losses.push(-probs[target_id].log());
+    }
+    // final average loss over the document sequence. May yours be low.
+    let loss = (1.0 / n as f64) * losses.into_iter().reduce(|a, b| a + b).unwrap();
+    let loss_data = loss.data();
+
+    // Backward the loss, calculating the gradients with respect to all model parameters
+    tape.backward(loss);
+
+    // Adam optimizer update: update the model parameters based on the corresponding gradients
+    let lr_t = learning_rate * (1.0 - step as f64 / num_steps as f64); // linear learning rate decay
+    {
+        let mut nodes = tape.nodes.borrow_mut();
+        for i in 0..num_params {
+            let g = nodes[i].grad;
+            m[i] = beta1 * m[i] + (1.0 - beta1) * g;
+            v[i] = beta2 * v[i] + (1.0 - beta2) * g * g;
+            let m_hat = m[i] / (1.0 - beta1.powi(step as i32 + 1));
+            let v_hat = v[i] / (1.0 - beta2.powi(step as i32 + 1));
+            nodes[i].data -= lr_t * m_hat / (v_hat.sqrt() + eps_adam);
+            nodes[i].grad = 0.0;
+        }
+    }
+    drop((keys, values)); // the KV cache indexes into the graph we are about to free
+    tape.truncate(num_params);
+
+    print!("step {:4} / {:4} | loss {:.4}\r", step + 1, num_steps, loss_data);
+    std::io::stdout().flush().unwrap();
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org04f94a9" class="outline-3">
+<h3 id="org04f94a9"><span class="section-number-3">9.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-9-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>[BOS] + [uchars.index(ch) for ch in doc] + [BOS]</code></td>
+<td class="org-left"><code>vec![bos]</code>, <code>.extend(... stoi[&amp;c])</code>, <code>.push(bos)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>min(block_size, len(tokens) - 1)</code></td>
+<td class="org-left"><code>BLOCK_SIZE.min(tokens.len() - 1)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>[[] for _ in range(n_layer)]</code></td>
+<td class="org-left"><code>vec![Vec::new(); N_LAYER]</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>-probs[target_id].log()</code></td>
+<td class="org-left"><code>-probs[target_id].log()</code> (identical, via <code>impl Neg</code>)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>(1 / n) * sum(losses)</code></td>
+<td class="org-left"><code>(1.0 / n as f64) * losses...reduce(+)</code> (<code>f64 * Value</code>)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>loss.backward()</code></td>
+<td class="org-left"><code>tape.backward(loss)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>for i, p in enumerate(params)</code></td>
+<td class="org-left"><code>for i in 0..num_params</code> over <code>nodes[i]</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>p.grad</code>, <code>p.data -</code> &#x2026;=</td>
+<td class="org-left"><code>nodes[i].grad</code>, <code>nodes[i].data -</code> &#x2026;=</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>p.grad ** 2</code></td>
+<td class="org-left"><code>g * g</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>beta1 ** (step + 1)</code></td>
+<td class="org-left"><code>beta1.powi(step as i32 + 1)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>v_hat ** 0.5</code></td>
+<td class="org-left"><code>v_hat.sqrt()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>p.grad = 0</code></td>
+<td class="org-left"><code>nodes[i].grad = 0.0</code></td>
+</tr>
+
+<tr>
+<td class="org-left">(implicit: GC reclaims the graph)</td>
+<td class="org-left"><code>drop((keys, values)); tape.truncate(num_params);</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>print(..., end</code>'\r')=</td>
+<td class="org-left"><code>print!("...\r")</code> + <code>stdout().flush()</code></td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li><b>The Adam update is plain <code>f64</code> math</b> in both versions. It works on
+<code>.data</code> and <code>.grad</code> directly and records nothing on the tape. Rust takes
+one <code>borrow_mut()</code> on the node vector for the whole loop and indexes
+into it, instead of going through <code>params</code> references one at a time.</li>
+<li><b>Why <code>loss_data</code> is read before <code>backward</code>.</b> <code>tape.backward</code> holds a
+<code>borrow_mut()</code> for its duration. Reading <code>loss.data()</code> up front leaves
+a plain <code>f64</code> for the print at the end, taken after the graph is gone.</li>
+<li><b>Freeing the graph.</b> This is the step Python never writes. After Adam,
+every node past <code>num_params</code> is garbage. <code>tape.truncate(num_params)</code>
+drops them all in O(1) and keeps the <code>Vec</code>'s capacity, so the next step
+reuses the same memory with no allocation. <code>drop((keys, values))</code>
+comes first because the cache holds handles to nodes being discarded.
+Because <code>Value</code> only borrows the tape immutably, the compiler wouldn't
+stop you using a stale handle; dropping the cache first makes the
+lifetime explicit.</li>
+<li><b>Printing.</b> Rust's <code>stdout</code> is line-buffered. A line ending in <code>\r</code>
+would never appear without an explicit <code>flush()</code>.</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-orgcd70251" class="outline-2">
+<h2 id="orgcd70251"><span class="section-number-2">10.</span> Inference</h2>
+<div class="outline-text-2" id="text-10">
+</div>
+<div id="outline-container-orgff95745" class="outline-3">
+<h3 id="orgff95745"><span class="section-number-3">10.1.</span> Python</h3>
+<div class="outline-text-3" id="text-10-1">
+<div class="org-src-container">
+<pre class="src src-python"># Inference: may the model babble back to us
+temperature = 0.5 # in (0, 1], control the "creativity" of generated text, low to high
+print("\n--- inference (new, hallucinated names) ---")
+for sample_idx in range(20):
+    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+    token_id = BOS
+    sample = []
+    for pos_id in range(block_size):
+        logits = gpt(token_id, pos_id, keys, values)
+        probs = softmax([l / temperature for l in logits])
+        token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
+        if token_id == BOS:
+            break
+        sample.append(uchars[token_id])
+    print(f"sample {sample_idx+1:2d}: {''.join(sample)}")
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgfaa9135" class="outline-3">
+<h3 id="orgfaa9135"><span class="section-number-3">10.2.</span> Rust</h3>
+<div class="outline-text-3" id="text-10-2">
+<div class="org-src-container">
+<pre class="src src-rust">// Inference: may the model babble back to us
+let temperature = 0.5; // in (0, 1], control the "creativity" of generated text, low to high
+println!("\n--- inference (new, hallucinated names) ---");
+for sample_idx in 0..20 {
+    let mut sample = String::new();
+    {
+        let mut keys: KvCache = vec![Vec::new(); N_LAYER];
+        let mut values: KvCache = vec![Vec::new(); N_LAYER];
+        let mut token_id = bos;
+        for pos_id in 0..BLOCK_SIZE {
+            let logits = gpt(&amp;sd, token_id, pos_id, &amp;mut keys, &amp;mut values);
+            let scaled: Vec&lt;Value&gt; = logits.iter().map(|l| *l / temperature).collect();
+            let probs = softmax(&amp;scaled);
+            let weights: Vec&lt;f64&gt; = probs.iter().map(|p| p.data()).collect();
+            token_id = rng.choices(&amp;weights);
+            if token_id == bos {
+                break;
+            }
+            sample.push(uchars[token_id]);
+        }
+    }
+    tape.truncate(num_params); // drop this sample's graph, keep the trained parameters
+    println!("sample {:2}: {}", sample_idx + 1, sample);
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org306fca4" class="outline-3">
+<h3 id="org306fca4"><span class="section-number-3">10.3.</span> Mapping</h3>
+<div class="outline-text-3" id="text-10-3">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Python</th>
+<th scope="col" class="org-left">Rust</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>sample = []</code> then <code>''.join(sample)</code></td>
+<td class="org-left"><code>let mut sample = String::new()</code>, <code>.push(char)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>[l / temperature for l in logits]</code></td>
+<td class="org-left"><code>.map(...)</code> of <code>*l / temperature</code> (<code>Div&lt;f64&gt;</code>)</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>[p.data for p in probs]</code></td>
+<td class="org-left"><code>.map(...)</code> of <code>p.data()</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>random.choices(range(vocab_size), weights=w)[0]</code></td>
+<td class="org-left"><code>rng.choices(&amp;weights)</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>break</code> on BOS</td>
+<td class="org-left"><code>break</code> on <code>bos</code></td>
+</tr>
+
+<tr>
+<td class="org-left">(graph garbage-collected)</td>
+<td class="org-left">inner <code>{ ... }</code> scope, then <code>tape.truncate</code></td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li>Python has no "no-grad" mode, so inference still builds graph nodes it
+will never backpropagate through. Rust does the same, for fidelity; the
+inner block scope drops the KV cache, and <code>truncate</code> removes the nodes
+before the next sample.</li>
+<li>A Rust <code>String</code> can grow one <code>char</code> at a time, so the sample doesn't need
+to be collected in a list and joined at the end.</li>
+</ul>
+</div>
+</div>
+</div>
+<div id="outline-container-org3fcbc15" class="outline-2">
+<h2 id="org3fcbc15"><span class="section-number-2">11.</span> What the tests add</h2>
+<div class="outline-text-2" id="text-11">
+<p>
+The Python gist has no tests. <code>src/main.rs:485–613</code> adds four, each
+checking a claim this document makes:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Test</th>
+<th scope="col" class="org-left">What it pins down</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left"><code>gradients_match_finite_differences</code></td>
+<td class="org-left">every operator's local gradient, incl. the fused <code>Sub</code> / <code>Div</code> / mixed-f64 ops, and <code>rmsnorm</code> → <code>softmax</code> → <code>-log</code></td>
+</tr>
+
+<tr>
+<td class="org-left"><code>params_survive_truncate_and_regrad</code></td>
+<td class="org-left">the "params are the first N slots, <code>truncate</code> frees the rest" invariant</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>untrained_loss_is_near_uniform</code></td>
+<td class="org-left">a fresh <code>gpt</code> gives loss ≈ ln(27) ≈ 3.30, i.e. the forward pass is wired sanely</td>
+</tr>
+
+<tr>
+<td class="org-left"><code>rng_moments_are_sane</code></td>
+<td class="org-left">the hand-written Gaussian has mean ≈ 0, variance ≈ 1</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Run them with <code>cargo test</code>.
+</p>
+</div>
+</div>
+<div id="outline-container-org7d930e6" class="outline-2">
+<h2 id="org7d930e6"><span class="section-number-2">12.</span> Summary: translation rules</h2>
+<div class="outline-text-2" id="text-12">
+<p>
+If you're porting the next change from Python, these rules cover it:
+</p>
+
+<ol class="org-ol">
+<li><b>Every <code>Value(...)</code> constructor becomes <code>tape.push(...)</code></b> with an
+explicit <code>[Option&lt;Parent&gt;; 2]</code> of <code>(index, local_grad)</code> pairs.</li>
+<li><b>Every bare float in an expression stays an <code>f64</code>.</b> The mixed-type
+operator impls attach it without creating a node.</li>
+<li><b>Every <code>sum(...)</code> becomes <code>.reduce(|a, b| a + b).unwrap()</code>.</b></li>
+<li><b>Every list comprehension becomes <code>.iter().map(...).collect()</code></b>;
+every <code>zip</code> becomes <code>.iter().zip(...)</code>.</li>
+<li><b>Every =x *</b> k= becomes <code>.powf(k)=* (on =Value</code>), <code>.powi(k)</code> or
+<code>.sqrt()</code> (on <code>f64</code>).</li>
+<li><b>Every global becomes a parameter</b>: <code>state_dict</code> → <code>&amp;sd</code>, <code>random</code> →
+<code>&amp;mut rng</code>, and mutated lists → <code>&amp;mut</code>.</li>
+<li><b>Every string-keyed weight becomes a struct field.</b></li>
+<li><b>Wherever Python relies on the GC to drop a graph</b>, Rust calls
+<code>tape.truncate(num_params)</code>, and drops any <code>Value</code> handles (KV cache)
+into that graph first.</li>
+<li><b>Integer ↔ float mixing is spelled out</b>: <code>n as f64</code>, <code>step as i32</code>.</li>
+</ol>
+
+<p>
+The other crates (<code>microgpt-scale</code>, <code>microgpt-mlx</code>, <code>microgpt-cuda</code>)
+drop the scalar tape for tensors and per-layer backward passes. They are
+the "everything else is just efficiency" part, and <code>docs/ARCHITECTURE.md</code>
+covers them.
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="date">Date: 2026-09-22</p>
+<p class="author">Author: Mike Wright</p>
+<p class="date">Created: 2026-09-22 Tue 17:45</p>
+</div>
+</body>
+</html>

@@ -269,6 +269,13 @@ Full architecture/design/milestone docs: [`docs/`](docs/) —
 [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DESIGN.md](docs/DESIGN.md),
 [PLAN.md](docs/PLAN.md), [PLAN-MLX.md](docs/PLAN-MLX.md).
 
+Reading the port side by side with the Python:
+[python-to-rust.org](docs/python-to-rust.org) (literate org-mode map from
+`microgpt.py` to `src/main.rs`, section by section; exported as
+[python-to-rust.html](docs/python-to-rust.html)) and
+[python-vs-rust.md](docs/python-vs-rust.md) (runtime flow of the Rust
+program, and how Python's `lambda`/comprehensions become Rust closures).
+
 ## License
 
 MIT — Copyright (c) 2026 Michael A. Wright. See [LICENSE](LICENSE).

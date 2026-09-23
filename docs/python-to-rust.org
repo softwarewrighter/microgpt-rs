@@ -1,0 +1,1104 @@
+#+TITLE: microgpt: From Python to Rust
+#+SUBTITLE: A literate walk through Karpathy's =microgpt.py= and its port in =src/main.rs=
+#+AUTHOR: Mike Wright
+#+DATE: 2026-09-22
+#+STARTUP: overview
+#+OPTIONS: toc:2 num:t ^:{}
+#+PROPERTY: header-args :eval never :exports code
+
+* Introduction
+
+Andrej Karpathy's [[https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95][microgpt.py]] is ~200 lines of dependency-free Python that
+trains a GPT and samples from it. Its opening docstring sets the rule for
+everything that follows:
+
+#+begin_quote
+This file is the complete algorithm. Everything else is just efficiency.
+#+end_quote
+
+=src/main.rs= in this repo is a port that keeps that rule: one file, no
+crates, same six sections in the same order, the same hyperparameters, the
+same comments where they still apply. This document puts the two programs
+next to each other one section at a time, and explains each place where Rust
+had to (or chose to) say it differently.
+
+Each section has:
+
+- the *Python* source, verbatim from the gist;
+- the matching *Rust* source, verbatim from =src/main.rs= (line numbers
+  given as =src/main.rs:N=);
+- a *Mapping* table and notes on the translation.
+
+** The map at a glance
+
+| # | Section    | Python                               | Rust                                            | =src/main.rs= |
+|---+------------+--------------------------------------+-------------------------------------------------+---------------|
+| 0 | Randomness | =import random=, =random.seed(42)=   | hand-written =struct Rng= (splitmix64)          | 14–64         |
+| 1 | Dataset    | =urllib= + =open()=                  | =curl= subprocess + =std::fs=                   | 372–389       |
+| 2 | Tokenizer  | =sorted(set(...))=, =uchars.index=   | =BTreeSet<char>=, =HashMap<char,usize>=         | 391–397       |
+| 3 | Autograd   | =class Value=, a GC'd object graph   | =Tape= arena + =Copy= handle =Value<'t>=        | 66–238        |
+| 4 | Parameters | =state_dict= dict of string keys     | =StateDict= / =LayerWeights= structs            | 240–288       |
+| 5 | Model      | =linear=, =softmax=, =rmsnorm=, =gpt= | same four functions over =&[Value]=            | 290–367       |
+| 6 | Adam       | =m=, =v= float lists                 | =Vec<f64>= buffers                              | 406–409       |
+| 7 | Training   | top-level =for step= loop            | =for step= in =fn main=                         | 411–457       |
+| 8 | Inference  | top-level sampling loop              | sampling loop in =fn main=                      | 459–482       |
+
+** The one big idea
+
+Almost everything is a line-for-line transliteration. The one structural
+change is autograd:
+
+- *Python* builds a graph of heap objects that point at their children.
+  =backward()= does a DFS to find a topological order, then walks it in
+  reverse. The garbage collector frees the graph when the next step drops
+  its last reference.
+- *Rust* appends every node to a flat =Vec<Node>= (the /tape/) in the order
+  the forward pass creates it. That order is already topological, so
+  =backward()= is one reverse loop over the vector. Parameters live in the
+  first =num_params= slots; freeing a step's whole graph is
+  =tape.truncate(num_params)=.
+
+Keep that in mind and the rest of the port reads straight across.
+
+* Imports and randomness
+
+** Python
+
+#+begin_src python
+import os       # os.path.exists
+import math     # math.log, math.exp
+import random   # random.seed, random.choices, random.gauss, random.shuffle
+random.seed(42) # Let there be order among chaos
+#+end_src
+
+** Rust
+
+#+begin_src rust
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
+use std::io::Write;
+use std::ops::{Add, Div, Mul, Neg, Sub};
+
+// Let there be Randomness: Rust's std has no RNG, so we make one (splitmix64 + Box-Muller)
+struct Rng(u64);
+
+impl Rng {
+    fn new(seed: u64) -> Rng {
+        Rng(seed) // Let there be order among chaos
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    fn uniform(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64 // [0, 1)
+    }
+
+    fn gauss(&mut self, mu: f64, sigma: f64) -> f64 {
+        let u1 = loop {
+            let u = self.uniform();
+            if u > 0.0 {
+                break u;
+            }
+        };
+        let u2 = self.uniform();
+        mu + sigma * (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    }
+
+    fn shuffle<T>(&mut self, xs: &mut [T]) {
+        for i in (1..xs.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            xs.swap(i, j);
+        }
+    }
+
+    /// Sample an index in proportion to the given weights (need not sum to 1).
+    fn choices(&mut self, weights: &[f64]) -> usize {
+        let total: f64 = weights.iter().sum();
+        let mut r = self.uniform() * total;
+        for (i, w) in weights.iter().enumerate() {
+            r -= w;
+            if r <= 0.0 {
+                return i;
+            }
+        }
+        weights.len() - 1
+    }
+}
+#+end_src
+
+** Mapping
+
+| Python                                      | Rust                               | Note                                            |
+|---------------------------------------------+------------------------------------+-------------------------------------------------|
+| =import os=                                 | =std::path::Path::exists=          | used inline in =main=                           |
+| =import math=                               | =f64::ln=, =f64::exp=, =f64::powf= | methods on the float type; nothing to import    |
+| =random.seed(42)=                           | =let mut rng = Rng::new(42);=      | an explicit value, passed as =&mut Rng=         |
+| =random.gauss(0, std)=                      | =rng.gauss(0.0, std)=              | Box–Muller transform                            |
+| =random.shuffle(docs)=                      | =rng.shuffle(&mut docs)=           | Fisher–Yates                                    |
+| =random.choices(range(V), weights=w)[0]=    | =rng.choices(&w)=                  | returns the index directly                      |
+
+- Python's =random= is a module-level global. Rust has no RNG in =std=, so
+  the port writes a 50-line one and threads it through as an argument —
+  global mutable state would need =unsafe= or a =Mutex=.
+- Same seed, *different* generator (splitmix64 vs. Python's Mersenne
+  Twister), so the Rust run doesn't reproduce Python's exact losses or
+  names. It is deterministic in its own right: same bits on every run.
+- =use std::ops::{Add, ...}= brings in the operator traits that stand in
+  for Python's =__add__= and friends (see [[*Autograd][Autograd]]).
+
+* Dataset
+
+** Python
+
+#+begin_src python
+# Let there be a Dataset `docs`: list[str] of documents (e.g. a list of names)
+if not os.path.exists('input.txt'):
+    import urllib.request
+    names_url = 'https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt'
+    urllib.request.urlretrieve(names_url, 'input.txt')
+docs = [line.strip() for line in open('input.txt') if line.strip()]
+random.shuffle(docs)
+print(f"num docs: {len(docs)}")
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Let there be a Dataset `docs`: a list of documents (e.g. a list of names)
+if !std::path::Path::new("input.txt").exists() {
+    let url = "https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt";
+    eprintln!("downloading {url} ...");
+    let ok = std::process::Command::new("curl")
+        .args(["-fsSL", "-o", "input.txt", url])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !ok {
+        eprintln!("download failed; fetch it manually:\n  curl -o input.txt {url}");
+        std::process::exit(1);
+    }
+}
+let text = std::fs::read_to_string("input.txt").expect("read input.txt");
+let mut docs: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+rng.shuffle(&mut docs);
+println!("num docs: {}", docs.len());
+#+end_src
+
+** Mapping
+
+| Python                                     | Rust                                                     |
+|--------------------------------------------+----------------------------------------------------------|
+| =os.path.exists('input.txt')=              | =std::path::Path::new("input.txt").exists()=             |
+| =urllib.request.urlretrieve(url, path)=    | =Command::new("curl").args([...]).status()=              |
+| =open('input.txt')= (line iterator)        | =std::fs::read_to_string= then =.lines()=                |
+| =[line.strip() for ... if line.strip()]=   | =.map(str::trim)=, =.filter(...)= on =!l.is_empty()=, =.collect()= |
+| =docs: list[str]=                          | =docs: Vec<&str>= — borrowed slices of =text=            |
+| =print(f"...")=                            | =println!("...")=                                        |
+
+- =std= has no HTTP client. Rather than add a dependency, the port shells
+  out to =curl= and fails with a clear message if it can't.
+- =Vec<&str>= holds borrowed slices into the one =String= =text=, so there
+  is no per-line allocation; the borrow checker makes sure =text= outlives
+  =docs=.
+
+* Tokenizer
+
+** Python
+
+#+begin_src python
+# Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+uchars = sorted(set(''.join(docs))) # unique characters in the dataset become token ids 0..n-1
+BOS = len(uchars) # token id for a special Beginning of Sequence (BOS) token
+vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
+print(f"vocab size: {vocab_size}")
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+let uchars: Vec<char> =
+    docs.iter().flat_map(|d| d.chars()).collect::<BTreeSet<_>>().into_iter().collect();
+let stoi: HashMap<char, usize> = uchars.iter().enumerate().map(|(i, c)| (*c, i)).collect();
+let bos = uchars.len(); // token id for a special Beginning of Sequence (BOS) token
+let vocab_size = uchars.len() + 1;
+println!("vocab size: {vocab_size}");
+#+end_src
+
+** Mapping
+
+| Python                         | Rust                                                     |
+|--------------------------------+----------------------------------------------------------|
+| =''.join(docs)=                | =docs.iter().flat_map(...)= over =d.chars()= (no string built) |
+| =sorted(set(...))=             | =.collect::<BTreeSet<_>>()= — a set that is already sorted |
+| =uchars.index(ch)= (encode)    | =stoi[&c]= — a =HashMap= lookup built once               |
+| =uchars[token_id]= (decode)    | =uchars[token_id]=                                       |
+| =BOS=                          | =bos= (Rust style: lowercase for a local)                |
+
+- Python encodes with =uchars.index(ch)=, a linear scan per character.
+  Fine for 26 letters; the port builds the inverse map =stoi= once instead.
+- =BTreeSet= does "dedupe and sort" in one step, the same job as
+  =sorted(set(...))=.
+
+* Autograd
+
+This is where the two programs differ most.
+
+** Python
+
+#+begin_src python
+# Let there be Autograd to recursively apply the chain rule through a computation graph
+class Value:
+    __slots__ = ('data', 'grad', '_children', '_local_grads') # Python optimization for memory usage
+
+    def __init__(self, data, children=(), local_grads=()):
+        self.data = data                # scalar value of this node calculated during forward pass
+        self.grad = 0                   # derivative of the loss w.r.t. this node, calculated in backward pass
+        self._children = children       # children of this node in the computation graph
+        self._local_grads = local_grads # local derivative of this node w.r.t. its children
+
+    def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        return Value(self.data + other.data, (self, other), (1, 1))
+
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        return Value(self.data * other.data, (self, other), (other.data, self.data))
+
+    def __pow__(self, other): return Value(self.data**other, (self,), (other * self.data**(other-1),))
+    def log(self): return Value(math.log(self.data), (self,), (1/self.data,))
+    def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),))
+    def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),))
+    def __neg__(self): return self * -1
+    def __radd__(self, other): return self + other
+    def __sub__(self, other): return self + (-other)
+    def __rsub__(self, other): return other + (-self)
+    def __rmul__(self, other): return self * other
+    def __truediv__(self, other): return self * other**-1
+    def __rtruediv__(self, other): return other * self**-1
+
+    def backward(self):
+        topo = []
+        visited = set()
+        def build_topo(v):
+            if v not in visited:
+                visited.add(v)
+                for child in v._children:
+                    build_topo(child)
+                topo.append(v)
+        build_topo(self)
+        self.grad = 1
+        for v in reversed(topo):
+            for child, local_grad in zip(v._children, v._local_grads):
+                child.grad += local_grad * v.grad
+#+end_src
+
+** Rust: the data structures
+
+The Python =Value= object is split into three Rust types:
+
+#+begin_src rust
+// Let there be Autograd: a tape of scalar nodes recording the forward pass,
+// replayed in reverse to apply the chain rule
+#[derive(Clone, Copy)]
+struct Parent {
+    idx: u32,        // index of the parent node on the tape
+    local_grad: f64, // d(this node) / d(parent), captured during the forward pass
+}
+
+#[derive(Clone, Copy)]
+struct Node {
+    data: f64, // scalar value of this node, calculated during the forward pass
+    grad: f64, // derivative of the loss w.r.t. this node, calculated in the backward pass
+    parents: [Option<Parent>; 2], // every primitive op has at most 2 inputs
+}
+
+struct Tape {
+    nodes: RefCell<Vec<Node>>,
+}
+
+/// A lightweight, copyable handle to one node on the tape.
+#[derive(Clone, Copy)]
+struct Value<'t> {
+    tape: &'t Tape,
+    idx: u32,
+}
+#+end_src
+
+| Python =Value= field        | Rust                                         | Why                                                        |
+|-----------------------------+----------------------------------------------+------------------------------------------------------------|
+| =self.data=                 | =Node::data: f64=                            | same                                                       |
+| =self.grad=                 | =Node::grad: f64=                            | same                                                       |
+| =self._children= (tuple)    | =Node::parents[i].idx: u32=                  | an index into the tape, not a pointer                      |
+| =self._local_grads= (tuple) | =Node::parents[i].local_grad: f64=           | stored next to the index it belongs to                     |
+| tuple of length 0–2         | =[Option<Parent>; 2]=                        | fixed size: no allocation per node                         |
+| the object itself           | =Value<'t> { tape, idx }=                    | a 16-byte =Copy= handle                                    |
+| =__slots__=                 | (not needed)                                 | a Rust struct is always packed                             |
+
+Naming: Python calls a node's inputs its =_children= (graph-traversal
+terms); the port calls them =parents= (dataflow terms: the nodes this one
+was computed /from/). It is the same edge, named from the other end.
+
+Why a tape instead of =Rc<RefCell<Node>>=? A graph of shared, mutable,
+reference-counted nodes is the literal translation of the Python, and in
+Rust it's awkward: =.borrow()= at every use, =Rc::clone= at every
+operator, and a =HashSet= of pointers for =visited=. The tape avoids all
+of that:
+
+- =Value= is =Copy=, so =a * b + c= reads exactly like Python — no
+  =.clone()= anywhere.
+- The lifetime ='t= ties every =Value= to its =Tape=. The compiler rejects
+  any =Value= that would outlive the tape.
+- =RefCell<Vec<Node>>= provides the interior mutability Python gets for
+  free. The ops only need =&Tape=, so many =Value= handles can share it.
+
+** Rust: the tape
+
+#+begin_src rust
+impl Tape {
+    fn new() -> Tape {
+        Tape { nodes: RefCell::new(Vec::new()) }
+    }
+
+    fn len(&self) -> usize {
+        self.nodes.borrow().len()
+    }
+
+    /// Discard every node past `len` -- frees a whole computation graph in O(1).
+    fn truncate(&self, len: usize) {
+        self.nodes.borrow_mut().truncate(len);
+    }
+
+    /// A leaf node (parameter or constant).
+    fn value(&self, data: f64) -> Value<'_> {
+        self.push(data, [None, None])
+    }
+
+    fn push(&self, data: f64, parents: [Option<Parent>; 2]) -> Value<'_> {
+        let mut nodes = self.nodes.borrow_mut();
+        let idx = u32::try_from(nodes.len()).expect("tape overflow");
+        nodes.push(Node { data, grad: 0.0, parents });
+        Value { tape: self, idx }
+    }
+
+    /// The tape is appended in forward order, which *is* a topological order of the
+    /// computation graph -- so backprop is one reverse sweep, no sorting required.
+    fn backward(&self, loss: Value) {
+        let mut nodes = self.nodes.borrow_mut();
+        nodes[loss.idx as usize].grad = 1.0;
+        for i in (0..=loss.idx as usize).rev() {
+            let Node { grad, parents, .. } = nodes[i];
+            for p in parents.into_iter().flatten() {
+                nodes[p.idx as usize].grad += p.local_grad * grad;
+            }
+        }
+    }
+}
+#+end_src
+
+| Python                                    | Rust                                       |
+|-------------------------------------------+--------------------------------------------|
+| =Value(x)= (leaf)                         | =tape.value(x)=                            |
+| =Value(data, children, local_grads)=      | =tape.push(data, [parent_a, parent_b])=    |
+| =loss.backward()=                         | =tape.backward(loss)=                      |
+| =build_topo= DFS + =visited= set          | *gone*: tape order is already topological  |
+| =for v in reversed(topo)=                 | =for i in (0..=loss.idx).rev()=            |
+| =child.grad += local_grad * v.grad=       | =nodes[p.idx].grad += p.local_grad * grad= |
+| GC frees the old graph                    | =tape.truncate(num_params)=                |
+
+A node can only refer to nodes created before it, so every parent index is
+smaller than its child's. Walking indices downward therefore visits each
+node after everything that depends on it, which is the property the
+Python DFS exists to establish. The inner loop is identical in both.
+
+** Rust: the operators
+
+#+begin_src rust
+impl<'t> Value<'t> {
+    fn data(self) -> f64 {
+        self.tape.nodes.borrow()[self.idx as usize].data
+    }
+
+    #[allow(dead_code)] // the training loop reads grads in bulk; this is for the grad-check tests
+    fn grad(self) -> f64 {
+        self.tape.nodes.borrow()[self.idx as usize].grad
+    }
+
+    fn parent(self, local_grad: f64) -> Option<Parent> {
+        Some(Parent { idx: self.idx, local_grad })
+    }
+
+    fn powf(self, k: f64) -> Value<'t> {
+        let a = self.data();
+        self.tape.push(a.powf(k), [self.parent(k * a.powf(k - 1.0)), None])
+    }
+
+    fn log(self) -> Value<'t> {
+        let a = self.data();
+        self.tape.push(a.ln(), [self.parent(1.0 / a), None])
+    }
+
+    fn exp(self) -> Value<'t> {
+        let e = self.data().exp();
+        self.tape.push(e, [self.parent(e), None])
+    }
+
+    fn relu(self) -> Value<'t> {
+        let a = self.data();
+        self.tape.push(a.max(0.0), [self.parent(if a > 0.0 { 1.0 } else { 0.0 }), None])
+    }
+}
+
+impl<'t> Add for Value<'t> {
+    type Output = Value<'t>;
+    fn add(self, other: Value<'t>) -> Value<'t> {
+        self.tape.push(self.data() + other.data(), [self.parent(1.0), other.parent(1.0)])
+    }
+}
+
+impl<'t> Sub for Value<'t> {
+    type Output = Value<'t>;
+    fn sub(self, other: Value<'t>) -> Value<'t> {
+        self.tape.push(self.data() - other.data(), [self.parent(1.0), other.parent(-1.0)])
+    }
+}
+
+impl<'t> Mul for Value<'t> {
+    type Output = Value<'t>;
+    fn mul(self, other: Value<'t>) -> Value<'t> {
+        let (a, b) = (self.data(), other.data());
+        self.tape.push(a * b, [self.parent(b), other.parent(a)])
+    }
+}
+
+impl<'t> Div for Value<'t> {
+    type Output = Value<'t>;
+    fn div(self, other: Value<'t>) -> Value<'t> {
+        let (a, b) = (self.data(), other.data());
+        self.tape.push(a / b, [self.parent(1.0 / b), other.parent(-a / (b * b))])
+    }
+}
+
+impl<'t> Neg for Value<'t> {
+    type Output = Value<'t>;
+    fn neg(self) -> Value<'t> {
+        self.tape.push(-self.data(), [self.parent(-1.0), None])
+    }
+}
+
+// Mixed Value-and-float ops: constants need no node of their own, they just have no gradient
+impl<'t> Add<f64> for Value<'t> { /* data + c,  local grad 1   */ }
+impl<'t> Sub<f64> for Value<'t> { /* data - c,  local grad 1   */ }
+impl<'t> Mul<f64> for Value<'t> { /* data * c,  local grad c   */ }
+impl<'t> Div<f64> for Value<'t> { /* data / c,  local grad 1/c */ }
+impl<'t> Mul<Value<'t>> for f64 { /* c * v  ==  v * c          */ }
+#+end_src
+
+(The five mixed-type impls are abbreviated here; see =src/main.rs:204–238=.)
+
+| Python dunder                  | Rust trait / method          | Local gradient(s)   | Difference                                      |
+|--------------------------------+------------------------------+---------------------+-------------------------------------------------|
+| =__add__=, =__radd__=          | =impl Add=, =impl Add<f64>=  | 1, 1                | —                                               |
+| =__mul__=, =__rmul__=          | =impl Mul=, =Mul<f64>=, =f64: Mul<Value>= | b, a   | —                                               |
+| =__sub__= (=self + (-other)=)  | =impl Sub=, =Sub<f64>=       | 1, −1               | one primitive node instead of neg + add         |
+| =__truediv__= (=self * other**-1=) | =impl Div=, =Div<f64>=   | 1/b, −a/b²          | one primitive node instead of pow + mul         |
+| =__neg__= (=self * -1=)        | =impl Neg=                   | −1                  | no constant leaf for =-1=                       |
+| =__pow__=                      | =.powf(k)=                   | k·aᵏ⁻¹              | Rust has no =**= operator                       |
+| =log=, =exp=, =relu=           | =.log()=, =.exp()=, =.relu()=| 1/a, eᵃ, [a>0]      | —                                               |
+| =isinstance(other, Value)=     | overload on the type =f64=   | —                   | resolved at compile time; no leaf for constants |
+
+Python builds =-=, =/= and unary =-= out of =+=, =*= and =**=, and wraps
+every bare number in its own =Value=. Rust gives each operator its own
+node with the analytic derivative, and treats a float constant as a node
+with one parent. The math is the same. The graph is smaller, and
+=src/main.rs:489–553= checks every operator against finite differences.
+
+* Parameters
+
+** Python
+
+#+begin_src python
+# Initialize the parameters, to store the knowledge of the model
+n_layer = 1     # depth of the transformer neural network (number of layers)
+n_embd = 16     # width of the network (embedding dimension)
+block_size = 16 # maximum context length of the attention window (note: the longest name is 15 characters)
+n_head = 4      # number of attention heads
+head_dim = n_embd // n_head # derived dimension of each head
+matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
+state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
+for i in range(n_layer):
+    state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
+    state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
+    state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
+params = [p for mat in state_dict.values() for row in mat for p in row] # flatten params into a single list[Value]
+print(f"num params: {len(params)}")
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Initialize the parameters, to store the knowledge of the model
+const N_LAYER: usize = 1; // depth of the transformer neural network (number of layers)
+const N_EMBD: usize = 16; // width of the network (embedding dimension)
+const BLOCK_SIZE: usize = 16; // maximum context length of the attention window
+const N_HEAD: usize = 4; // number of attention heads
+const HEAD_DIM: usize = N_EMBD / N_HEAD; // derived dimension of each head
+
+type Mat<'t> = Vec<Vec<Value<'t>>>;
+
+struct LayerWeights<'t> {
+    attn_wq: Mat<'t>,
+    attn_wk: Mat<'t>,
+    attn_wv: Mat<'t>,
+    attn_wo: Mat<'t>,
+    mlp_fc1: Mat<'t>,
+    mlp_fc2: Mat<'t>,
+}
+
+struct StateDict<'t> {
+    wte: Mat<'t>,
+    wpe: Mat<'t>,
+    lm_head: Mat<'t>,
+    layers: Vec<LayerWeights<'t>>,
+}
+
+fn matrix<'t>(tape: &'t Tape, rng: &mut Rng, nout: usize, nin: usize) -> Mat<'t> {
+    let std = 0.08;
+    (0..nout).map(|_| (0..nin).map(|_| tape.value(rng.gauss(0.0, std))).collect()).collect()
+}
+
+impl<'t> StateDict<'t> {
+    fn init(tape: &'t Tape, rng: &mut Rng, vocab_size: usize) -> StateDict<'t> {
+        StateDict {
+            wte: matrix(tape, rng, vocab_size, N_EMBD),
+            wpe: matrix(tape, rng, BLOCK_SIZE, N_EMBD),
+            lm_head: matrix(tape, rng, vocab_size, N_EMBD),
+            layers: (0..N_LAYER)
+                .map(|_| LayerWeights {
+                    attn_wq: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wk: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wv: matrix(tape, rng, N_EMBD, N_EMBD),
+                    attn_wo: matrix(tape, rng, N_EMBD, N_EMBD),
+                    mlp_fc1: matrix(tape, rng, 4 * N_EMBD, N_EMBD),
+                    mlp_fc2: matrix(tape, rng, N_EMBD, 4 * N_EMBD),
+                })
+                .collect(),
+        }
+    }
+}
+
+// ... later, in main():
+// Parameters live in the first `num_params` slots of the tape and persist across steps;
+// everything past them is one step's computation graph, discarded by truncate()
+let tape = Tape::new();
+let sd = StateDict::init(&tape, &mut rng, vocab_size);
+let num_params = tape.len();
+println!("num params: {num_params}");
+#+end_src
+
+** Mapping
+
+| Python                                   | Rust                                            |
+|------------------------------------------+-------------------------------------------------|
+| =n_layer=, =n_embd=, ... (module globals) | =const N_LAYER=, =const N_EMBD=, ...           |
+| =n_embd // n_head=                       | =N_EMBD / N_HEAD= (integer division on =usize=) |
+| =matrix = lambda nout, nin, std=0.08:=   | =fn matrix(tape, rng, nout, nin)=               |
+| =list[list[Value]]=                      | =type Mat<'t> = Vec<Vec<Value<'t>>>=            |
+| =state_dict['wte']=                      | =sd.wte=                                        |
+| =state_dict[f'layer{li}.attn_wq']=       | =sd.layers[li].attn_wq= (or =layer.attn_wq=)    |
+| =params= (flattened =list[Value]=)       | tape slots =0..num_params=                      |
+| =len(params)=                            | =tape.len()= right after init                   |
+
+- String keys become struct fields, so a typo in a weight name is a
+  compile error instead of a =KeyError= at runtime.
+- The per-layer weights are grouped into =LayerWeights=, and =gpt= loops
+  over =sd.layers= rather than formatting =f'layer{li}...'= keys.
+- *There is no =params= list.* Parameters are the first nodes pushed onto
+  the empty tape, so they occupy slots =0..num_params=. Adam walks
+  =nodes[0..num_params]= directly. This depends on nothing else touching
+  the tape before =StateDict::init=.
+- The initialization order is wte, wpe, lm_head, then per layer q, k, v,
+  o, fc1, fc2, the same order as the Python. (It can't give the same
+  numbers, since the RNG differs.)
+
+* Model
+
+** Python
+
+#+begin_src python
+# Define the model architecture: a function mapping tokens and parameters to logits over what comes next
+# Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU
+def linear(x, w):
+    return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
+
+def softmax(logits):
+    max_val = max(val.data for val in logits)
+    exps = [(val - max_val).exp() for val in logits]
+    total = sum(exps)
+    return [e / total for e in exps]
+
+def rmsnorm(x):
+    ms = sum(xi * xi for xi in x) / len(x)
+    scale = (ms + 1e-5) ** -0.5
+    return [xi * scale for xi in x]
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Define the model architecture: a function mapping tokens and parameters to logits over what comes next
+// Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU
+fn linear<'t>(x: &[Value<'t>], w: &[Vec<Value<'t>>]) -> Vec<Value<'t>> {
+    w.iter()
+        .map(|row| row.iter().zip(x).map(|(wi, xi)| *wi * *xi).reduce(|a, b| a + b).unwrap())
+        .collect()
+}
+
+fn softmax<'t>(logits: &[Value<'t>]) -> Vec<Value<'t>> {
+    let max_val = logits.iter().map(|v| v.data()).fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<Value<'t>> = logits.iter().map(|v| (*v - max_val).exp()).collect();
+    let total = exps.iter().copied().reduce(|a, b| a + b).unwrap();
+    exps.iter().map(|e| *e / total).collect()
+}
+
+fn rmsnorm<'t>(x: &[Value<'t>]) -> Vec<Value<'t>> {
+    let ms = x.iter().map(|xi| *xi * *xi).reduce(|a, b| a + b).unwrap() / x.len() as f64;
+    let scale = (ms + 1e-5).powf(-0.5);
+    x.iter().map(|xi| *xi * scale).collect()
+}
+#+end_src
+
+** Mapping: the idioms
+
+These few patterns cover almost the whole model. (Closures are shortened
+in the table because a =|x|= would break an org table; the real code is
+in the blocks above.)
+
+| Python idiom                         | Rust idiom                                        |
+|--------------------------------------+---------------------------------------------------|
+| =[f(a) for a in xs]=                 | =xs.iter().map(f).collect()=  |
+| =zip(xs, ys)=                        | =xs.iter().zip(ys)=                               |
+| =sum(values)=                        | =.reduce(add).unwrap()= (closure adds two =Value=s)      |
+| =max(v.data for v in xs)=            | =.map(data).fold(f64::NEG_INFINITY, f64::max)= |
+| =x ** -0.5=                          | =x.powf(-0.5)=                                    |
+| =len(x)= inside arithmetic           | =x.len() as f64= (conversions are explicit)       |
+| =list[Value]= argument               | =&[Value<'t>]= (a borrowed slice)                 |
+| =list[Value]= return                 | =Vec<Value<'t>>=                                  |
+
+Why =reduce= and not =.sum()=: Python's =sum()= starts from the integer
+=0=, which becomes a constant =Value(0)= leaf plus one extra add node.
+Rust's =Iterator::sum= would need an =impl Sum for Value= and a
+zero-valued starting node, which needs a tape reference to create.
+=reduce= starts from the first element, so no zero node is needed. It
+panics (=unwrap=) on an empty input, which can't happen here.
+
+=*wi * *xi= dereferences the =&Value= that =.iter()= yields; because
+=Value= is =Copy=, that's a 16-byte copy, not a clone of the node.
+
+** The =gpt= function
+
+*** Python
+
+#+begin_src python
+def gpt(token_id, pos_id, keys, values):
+    tok_emb = state_dict['wte'][token_id] # token embedding
+    pos_emb = state_dict['wpe'][pos_id] # position embedding
+    x = [t + p for t, p in zip(tok_emb, pos_emb)] # joint token and position embedding
+    x = rmsnorm(x) # note: not redundant due to backward pass via the residual connection
+
+    for li in range(n_layer):
+        # 1) Multi-head Attention block
+        x_residual = x
+        x = rmsnorm(x)
+        q = linear(x, state_dict[f'layer{li}.attn_wq'])
+        k = linear(x, state_dict[f'layer{li}.attn_wk'])
+        v = linear(x, state_dict[f'layer{li}.attn_wv'])
+        keys[li].append(k)
+        values[li].append(v)
+        x_attn = []
+        for h in range(n_head):
+            hs = h * head_dim
+            q_h = q[hs:hs+head_dim]
+            k_h = [ki[hs:hs+head_dim] for ki in keys[li]]
+            v_h = [vi[hs:hs+head_dim] for vi in values[li]]
+            attn_logits = [sum(q_h[j] * k_h[t][j] for j in range(head_dim)) / head_dim**0.5 for t in range(len(k_h))]
+            attn_weights = softmax(attn_logits)
+            head_out = [sum(attn_weights[t] * v_h[t][j] for t in range(len(v_h))) for j in range(head_dim)]
+            x_attn.extend(head_out)
+        x = linear(x_attn, state_dict[f'layer{li}.attn_wo'])
+        x = [a + b for a, b in zip(x, x_residual)]
+        # 2) MLP block
+        x_residual = x
+        x = rmsnorm(x)
+        x = linear(x, state_dict[f'layer{li}.mlp_fc1'])
+        x = [xi.relu() for xi in x]
+        x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
+        x = [a + b for a, b in zip(x, x_residual)]
+
+    logits = linear(x, state_dict['lm_head'])
+    return logits
+#+end_src
+
+*** Rust
+
+#+begin_src rust
+type KvCache<'t> = Vec<Vec<Vec<Value<'t>>>>; // [layer][position][n_embd]
+
+fn gpt<'t>(
+    sd: &StateDict<'t>,
+    token_id: usize,
+    pos_id: usize,
+    keys: &mut KvCache<'t>,
+    values: &mut KvCache<'t>,
+) -> Vec<Value<'t>> {
+    let tok_emb = &sd.wte[token_id]; // token embedding
+    let pos_emb = &sd.wpe[pos_id]; // position embedding
+    let mut x: Vec<Value<'t>> = tok_emb.iter().zip(pos_emb).map(|(t, p)| *t + *p).collect();
+    x = rmsnorm(&x); // note: not redundant due to backward pass via the residual connection
+
+    for (li, layer) in sd.layers.iter().enumerate() {
+        // 1) Multi-head Attention block
+        let x_residual = x.clone();
+        x = rmsnorm(&x);
+        let q = linear(&x, &layer.attn_wq);
+        let k = linear(&x, &layer.attn_wk);
+        let v = linear(&x, &layer.attn_wv);
+        keys[li].push(k);
+        values[li].push(v);
+        let t_len = keys[li].len();
+        let mut x_attn = Vec::with_capacity(N_EMBD);
+        for h in 0..N_HEAD {
+            let hs = h * HEAD_DIM;
+            let q_h = &q[hs..hs + HEAD_DIM];
+            let attn_logits: Vec<Value<'t>> = (0..t_len)
+                .map(|t| {
+                    let k_h = &keys[li][t][hs..hs + HEAD_DIM];
+                    let dot = (0..HEAD_DIM).map(|j| q_h[j] * k_h[j]).reduce(|a, b| a + b).unwrap();
+                    dot / (HEAD_DIM as f64).sqrt()
+                })
+                .collect();
+            let attn_weights = softmax(&attn_logits);
+            for j in 0..HEAD_DIM {
+                let head_out = (0..t_len)
+                    .map(|t| attn_weights[t] * values[li][t][hs + j])
+                    .reduce(|a, b| a + b)
+                    .unwrap();
+                x_attn.push(head_out);
+            }
+        }
+        x = linear(&x_attn, &layer.attn_wo);
+        x = x.iter().zip(&x_residual).map(|(a, b)| *a + *b).collect();
+        // 2) MLP block
+        let x_residual = x.clone();
+        x = rmsnorm(&x);
+        x = linear(&x, &layer.mlp_fc1);
+        x = x.iter().map(|xi| xi.relu()).collect();
+        x = linear(&x, &layer.mlp_fc2);
+        x = x.iter().zip(&x_residual).map(|(a, b)| *a + *b).collect();
+    }
+
+    linear(&x, &sd.lm_head) // logits
+}
+#+end_src
+
+*** Mapping
+
+| Python                                          | Rust                                                  |
+|-------------------------------------------------+-------------------------------------------------------|
+| =gpt(token_id, pos_id, keys, values)=           | =gpt(&sd, token_id, pos_id, &mut keys, &mut values)=  |
+| global =state_dict=                             | explicit =sd: &StateDict= argument                    |
+| =keys= (=list[list[list[Value]]]=, mutated)     | =keys: &mut KvCache<'t>=                              |
+| =for li in range(n_layer)=                      | =for (li, layer) in sd.layers.iter().enumerate()=     |
+| =x_residual = x= (rebinding a reference)        | =let x_residual = x.clone();=                         |
+| =keys[li].append(k)=                            | =keys[li].push(k)=                                    |
+| =q[hs:hs+head_dim]= (copies a list)             | =&q[hs..hs + HEAD_DIM]= (borrows a slice)             |
+| =k_h = [ki[hs:hs+head_dim] for ki in keys[li]]= | slices taken in place inside the =.map= closure       |
+| =head_dim**0.5=                                 | =(HEAD_DIM as f64).sqrt()=                            |
+| =x_attn.extend(head_out)=                       | =x_attn.push(head_out)= once per =j=                  |
+| =return logits=                                 | tail expression =linear(&x, &sd.lm_head)=             |
+
+- *Residuals.* In Python, =x_residual = x= keeps the old list alive
+  because the next line rebinds =x= to a new list. Rust does the same with
+  =x.clone()=. It copies 16 handles, not the nodes they refer to.
+- *KV cache.* In Python the lists are mutated in place through shared
+  references; Rust says so with =&mut=. The cache stores =Value= handles
+  that point into the current graph, which is why =main= drops it before
+  truncating the tape (see [[*Training loop][Training loop]]).
+- *Per-head slices.* Python copies =k_h= and =v_h= for every head. Rust
+  indexes the cache directly (=keys[li][t][hs..hs + HEAD_DIM]=,
+  =values[li][t][hs + j]=), so nothing is copied. The arithmetic and
+  summation order are the same.
+- *Dividing by √d.* In Python this is =Value / float=: the float is
+  wrapped in a =Value=, raised to =**-1=, then multiplied. In Rust it's
+  one =Div<f64>= node.
+
+* Adam optimizer: buffers
+
+** Python
+
+#+begin_src python
+# Let there be Adam, the blessed optimizer and its buffers
+learning_rate, beta1, beta2, eps_adam = 0.01, 0.85, 0.99, 1e-8
+m = [0.0] * len(params) # first moment buffer
+v = [0.0] * len(params) # second moment buffer
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Let there be Adam, the blessed optimizer and its buffers
+let (learning_rate, beta1, beta2, eps_adam) = (0.01, 0.85, 0.99, 1e-8);
+let mut m = vec![0.0; num_params]; // first moment buffer
+let mut v = vec![0.0; num_params]; // second moment buffer
+#+end_src
+
+Python's tuple unpacking maps to a destructuring =let=, and
+=[0.0] * n= maps to =vec![0.0; n]=. Everything else is unchanged.
+
+* Training loop
+
+** Python
+
+#+begin_src python
+# Repeat in sequence
+num_steps = 1000 # number of training steps
+for step in range(num_steps):
+
+    # Take single document, tokenize it, surround it with BOS special token on both sides
+    doc = docs[step % len(docs)]
+    tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
+    n = min(block_size, len(tokens) - 1)
+
+    # Forward the token sequence through the model, building up the computation graph all the way to the loss
+    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+    losses = []
+    for pos_id in range(n):
+        token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
+        logits = gpt(token_id, pos_id, keys, values)
+        probs = softmax(logits)
+        loss_t = -probs[target_id].log()
+        losses.append(loss_t)
+    loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
+
+    # Backward the loss, calculating the gradients with respect to all model parameters
+    loss.backward()
+
+    # Adam optimizer update: update the model parameters based on the corresponding gradients
+    lr_t = learning_rate * (1 - step / num_steps) # linear learning rate decay
+    for i, p in enumerate(params):
+        m[i] = beta1 * m[i] + (1 - beta1) * p.grad
+        v[i] = beta2 * v[i] + (1 - beta2) * p.grad ** 2
+        m_hat = m[i] / (1 - beta1 ** (step + 1))
+        v_hat = v[i] / (1 - beta2 ** (step + 1))
+        p.data -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
+        p.grad = 0
+
+    print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Repeat in sequence
+let num_steps = 1000;
+for step in 0..num_steps {
+    // Take a single document, tokenize it, surround it with BOS special tokens on both sides
+    let doc = docs[step % docs.len()];
+    let mut tokens = vec![bos];
+    tokens.extend(doc.chars().map(|c| stoi[&c]));
+    tokens.push(bos);
+    let n = BLOCK_SIZE.min(tokens.len() - 1);
+
+    // Forward the token sequence through the model, building up the computation graph to the loss
+    let mut keys: KvCache = vec![Vec::new(); N_LAYER];
+    let mut values: KvCache = vec![Vec::new(); N_LAYER];
+    let mut losses = Vec::with_capacity(n);
+    for pos_id in 0..n {
+        let (token_id, target_id) = (tokens[pos_id], tokens[pos_id + 1]);
+        let logits = gpt(&sd, token_id, pos_id, &mut keys, &mut values);
+        let probs = softmax(&logits);
+        losses.push(-probs[target_id].log());
+    }
+    // final average loss over the document sequence. May yours be low.
+    let loss = (1.0 / n as f64) * losses.into_iter().reduce(|a, b| a + b).unwrap();
+    let loss_data = loss.data();
+
+    // Backward the loss, calculating the gradients with respect to all model parameters
+    tape.backward(loss);
+
+    // Adam optimizer update: update the model parameters based on the corresponding gradients
+    let lr_t = learning_rate * (1.0 - step as f64 / num_steps as f64); // linear learning rate decay
+    {
+        let mut nodes = tape.nodes.borrow_mut();
+        for i in 0..num_params {
+            let g = nodes[i].grad;
+            m[i] = beta1 * m[i] + (1.0 - beta1) * g;
+            v[i] = beta2 * v[i] + (1.0 - beta2) * g * g;
+            let m_hat = m[i] / (1.0 - beta1.powi(step as i32 + 1));
+            let v_hat = v[i] / (1.0 - beta2.powi(step as i32 + 1));
+            nodes[i].data -= lr_t * m_hat / (v_hat.sqrt() + eps_adam);
+            nodes[i].grad = 0.0;
+        }
+    }
+    drop((keys, values)); // the KV cache indexes into the graph we are about to free
+    tape.truncate(num_params);
+
+    print!("step {:4} / {:4} | loss {:.4}\r", step + 1, num_steps, loss_data);
+    std::io::stdout().flush().unwrap();
+}
+#+end_src
+
+** Mapping
+
+| Python                                          | Rust                                                     |
+|-------------------------------------------------+----------------------------------------------------------|
+| =[BOS] + [uchars.index(ch) for ch in doc] + [BOS]= | =vec![bos]=, =.extend(... stoi[&c])=, =.push(bos)=    |
+| =min(block_size, len(tokens) - 1)=              | =BLOCK_SIZE.min(tokens.len() - 1)=                       |
+| =[[] for _ in range(n_layer)]=                  | =vec![Vec::new(); N_LAYER]=                              |
+| =-probs[target_id].log()=                       | =-probs[target_id].log()= (identical, via =impl Neg=)    |
+| =(1 / n) * sum(losses)=                         | =(1.0 / n as f64) * losses...reduce(+)= (=f64 * Value=)  |
+| =loss.backward()=                               | =tape.backward(loss)=                                    |
+| =for i, p in enumerate(params)=                 | =for i in 0..num_params= over =nodes[i]=                 |
+| =p.grad=, =p.data -= ...=                       | =nodes[i].grad=, =nodes[i].data -= ...=                  |
+| =p.grad ** 2=                                   | =g * g=                                                  |
+| =beta1 ** (step + 1)=                           | =beta1.powi(step as i32 + 1)=                            |
+| =v_hat ** 0.5=                                  | =v_hat.sqrt()=                                           |
+| =p.grad = 0=                                    | =nodes[i].grad = 0.0=                                    |
+| (implicit: GC reclaims the graph)               | =drop((keys, values)); tape.truncate(num_params);=       |
+| =print(..., end='\r')=                          | =print!("...\r")= + =stdout().flush()=                   |
+
+- *The Adam update is plain =f64= math* in both versions. It works on
+  =.data= and =.grad= directly and records nothing on the tape. Rust takes
+  one =borrow_mut()= on the node vector for the whole loop and indexes
+  into it, instead of going through =params= references one at a time.
+- *Why =loss_data= is read before =backward=.* =tape.backward= holds a
+  =borrow_mut()= for its duration. Reading =loss.data()= up front leaves
+  a plain =f64= for the print at the end, taken after the graph is gone.
+- *Freeing the graph.* This is the step Python never writes. After Adam,
+  every node past =num_params= is garbage. =tape.truncate(num_params)=
+  drops them all in O(1) and keeps the =Vec='s capacity, so the next step
+  reuses the same memory with no allocation. =drop((keys, values))=
+  comes first because the cache holds handles to nodes being discarded.
+  Because =Value= only borrows the tape immutably, the compiler wouldn't
+  stop you using a stale handle; dropping the cache first makes the
+  lifetime explicit.
+- *Printing.* Rust's =stdout= is line-buffered. A line ending in =\r=
+  would never appear without an explicit =flush()=.
+
+* Inference
+
+** Python
+
+#+begin_src python
+# Inference: may the model babble back to us
+temperature = 0.5 # in (0, 1], control the "creativity" of generated text, low to high
+print("\n--- inference (new, hallucinated names) ---")
+for sample_idx in range(20):
+    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+    token_id = BOS
+    sample = []
+    for pos_id in range(block_size):
+        logits = gpt(token_id, pos_id, keys, values)
+        probs = softmax([l / temperature for l in logits])
+        token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
+        if token_id == BOS:
+            break
+        sample.append(uchars[token_id])
+    print(f"sample {sample_idx+1:2d}: {''.join(sample)}")
+#+end_src
+
+** Rust
+
+#+begin_src rust
+// Inference: may the model babble back to us
+let temperature = 0.5; // in (0, 1], control the "creativity" of generated text, low to high
+println!("\n--- inference (new, hallucinated names) ---");
+for sample_idx in 0..20 {
+    let mut sample = String::new();
+    {
+        let mut keys: KvCache = vec![Vec::new(); N_LAYER];
+        let mut values: KvCache = vec![Vec::new(); N_LAYER];
+        let mut token_id = bos;
+        for pos_id in 0..BLOCK_SIZE {
+            let logits = gpt(&sd, token_id, pos_id, &mut keys, &mut values);
+            let scaled: Vec<Value> = logits.iter().map(|l| *l / temperature).collect();
+            let probs = softmax(&scaled);
+            let weights: Vec<f64> = probs.iter().map(|p| p.data()).collect();
+            token_id = rng.choices(&weights);
+            if token_id == bos {
+                break;
+            }
+            sample.push(uchars[token_id]);
+        }
+    }
+    tape.truncate(num_params); // drop this sample's graph, keep the trained parameters
+    println!("sample {:2}: {}", sample_idx + 1, sample);
+}
+#+end_src
+
+** Mapping
+
+| Python                                              | Rust                                               |
+|-----------------------------------------------------+----------------------------------------------------|
+| =sample = []= then =''.join(sample)=                | =let mut sample = String::new()=, =.push(char)=    |
+| =[l / temperature for l in logits]=                 | =.map(...)= of =*l / temperature= (=Div<f64>=) |
+| =[p.data for p in probs]=                           | =.map(...)= of =p.data()=                   |
+| =random.choices(range(vocab_size), weights=w)[0]=   | =rng.choices(&weights)=                            |
+| =break= on BOS                                      | =break= on =bos=                                   |
+| (graph garbage-collected)                           | inner ={ ... }= scope, then =tape.truncate=        |
+
+- Python has no "no-grad" mode, so inference still builds graph nodes it
+  will never backpropagate through. Rust does the same, for fidelity; the
+  inner block scope drops the KV cache, and =truncate= removes the nodes
+  before the next sample.
+- A Rust =String= can grow one =char= at a time, so the sample doesn't need
+  to be collected in a list and joined at the end.
+
+* What the tests add
+
+The Python gist has no tests. =src/main.rs:485–613= adds four, each
+checking a claim this document makes:
+
+| Test                                  | What it pins down                                                   |
+|---------------------------------------+---------------------------------------------------------------------|
+| =gradients_match_finite_differences=  | every operator's local gradient, incl. the fused =Sub= / =Div= / mixed-f64 ops, and =rmsnorm= → =softmax= → =-log= |
+| =params_survive_truncate_and_regrad=  | the "params are the first N slots, =truncate= frees the rest" invariant |
+| =untrained_loss_is_near_uniform=      | a fresh =gpt= gives loss ≈ ln(27) ≈ 3.30, i.e. the forward pass is wired sanely |
+| =rng_moments_are_sane=                | the hand-written Gaussian has mean ≈ 0, variance ≈ 1                |
+
+Run them with =cargo test=.
+
+* Summary: translation rules
+
+If you're porting the next change from Python, these rules cover it:
+
+1. *Every =Value(...)= constructor becomes =tape.push(...)=* with an
+   explicit =[Option<Parent>; 2]= of =(index, local_grad)= pairs.
+2. *Every bare float in an expression stays an =f64=.* The mixed-type
+   operator impls attach it without creating a node.
+3. *Every =sum(...)= becomes =.reduce(|a, b| a + b).unwrap()=.*
+4. *Every list comprehension becomes =.iter().map(...).collect()=*;
+   every =zip= becomes =.iter().zip(...)=.
+5. *Every =x ** k= becomes =.powf(k)=* (on =Value=), =.powi(k)= or
+   =.sqrt()= (on =f64=).
+6. *Every global becomes a parameter*: =state_dict= → =&sd=, =random= →
+   =&mut rng=, and mutated lists → =&mut=.
+7. *Every string-keyed weight becomes a struct field.*
+8. *Wherever Python relies on the GC to drop a graph*, Rust calls
+   =tape.truncate(num_params)=, and drops any =Value= handles (KV cache)
+   into that graph first.
+9. *Integer ↔ float mixing is spelled out*: =n as f64=, =step as i32=.
+
+The other crates (=microgpt-scale=, =microgpt-mlx=, =microgpt-cuda=)
+drop the scalar tape for tensors and per-layer backward passes. They are
+the "everything else is just efficiency" part, and =docs/ARCHITECTURE.md=
+covers them.
